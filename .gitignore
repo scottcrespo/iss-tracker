@@ -44,3 +44,4 @@ PYTHON
 **/__pycache__/
 *.py[cod]
 *.env
+env.sh
