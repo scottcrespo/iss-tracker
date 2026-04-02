@@ -76,9 +76,9 @@ def main():
     """
     primary control logic for poller app
     """
-    url_env = os.environ["ISS_TRACK_URL"]
+    url_env = os.environ["ISS_TRACK_URL"]    
     response_dict = fetch_iss_data_json(url_env)
-    item = transform_to_db_entry(response_dict)
+    item = transform_to_db_entry(response_dict)   
     write_to_db(item)
 
     # check if pushgateway is configured (optional dependency)
@@ -88,4 +88,4 @@ def main():
     logger.info("Task completed successfully")
 
 if __name__ == '__main__':
-    main()    
+    main()
