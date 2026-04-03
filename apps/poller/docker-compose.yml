@@ -39,7 +39,7 @@ services:
   poller:
     build:
       context: .
-      dockerfile: Dockerfile.poller
+      dockerfile: Dockerfile
     container_name: iss-poller
     depends_on:
       dynamodb-init:
