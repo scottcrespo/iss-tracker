@@ -1,3 +1,7 @@
+# poller.py
+#
+# This application polls a public api endpoint to fetch position data of the
+# International space station. 
 import os
 import time
 import logging
