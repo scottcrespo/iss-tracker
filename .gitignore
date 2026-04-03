@@ -37,6 +37,13 @@ override.tf.json
 terraform.rc
 
 ###################################
+DOCS
+###################################
+
+# local design decision notes - content may be promoted to README
+docs/decisions/
+
+###################################
 PYTHON
 ###################################
 
