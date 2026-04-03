@@ -47,3 +47,26 @@ def test_fetch_raises_immediately_on_http_error():
                                 max_retries=3, retry_delay_seconds=0,
                                 timeout_seconds=3)
         assert mock_get.call_count == 1
+
+def test_transform_to_db_entry():
+    """
+    Verify floats are converted to Decimal and pk is set correctly.
+    """
+    from decimal import Decimal
+
+    data = {
+        "latitude": 45.123456,
+        "longitude": -93.654321,
+        "altitude": 408.5,
+        "velocity": 7.66,
+        "timestamp": 1234567890,
+    }
+
+    result = transform_to_db_entry(data)
+
+    assert result["pk"] == "POSITION"
+    assert result["latitude"] == Decimal("45.123456")
+    assert result["longitude"] == Decimal("-93.654321")
+    assert result["altitude"] == Decimal("408.5")
+    assert result["velocity"] == Decimal("7.66")
+    assert result["timestamp"] == 1234567890
