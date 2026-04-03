@@ -7,11 +7,35 @@ import time
 import logging
 from decimal import Decimal
 
+import boto3
 import httpx
-from modules.database import table
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def init_db(table_name: str, endpoint_url: str | None) -> object:
+    """
+    Initializes dynamodb connection and returns a table.
+    Raises on connection failure or if the table does not exist.
+    """
+    from botocore.exceptions import EndpointConnectionError, NoRegionError
+
+    try:
+        dynamodb = boto3.resource("dynamodb", endpoint_url=endpoint_url)
+    except (EndpointConnectionError, NoRegionError) as e:
+        logger.error(f"Failed to connect to DynamoDB: {e}")
+        raise
+
+    try:
+        table = dynamodb.Table(table_name)
+        # load() forces a round-trip to verify the table exists
+        table.load()
+    except dynamodb.meta.client.exceptions.ResourceNotFoundException:
+        logger.error(f"DynamoDB table '{table_name}' does not exist")
+        raise
+
+    logger.info(f"Connected to DynamoDB table '{table_name}'")
+    return table
 
 def fetch_iss_data_json(url: str, max_retries: int, 
                         retry_delay_seconds: int,
@@ -53,7 +77,7 @@ def transform_to_db_entry(data: dict) -> dict:
         "timestamp": data['timestamp'],
     }
 
-def write_to_db(data: dict) -> None:
+def write_to_db(table: object, data: dict) -> None:
     """
     performs write operation to dynamodb
     """
@@ -91,16 +115,27 @@ def push_prometheus_metric() -> None:
 def main():
     """
     primary control logic for poller app
-    """    
+    """
+    
     try:
+        ## initialize db
+        db_table_name = os.environ["DYNAMODB_TABLE"]
+        db_endpoint_url = os.getenv("DYNAMODB_ENDPOINT_URL")
+        db_table = init_db(db_table_name, db_endpoint_url)
+        
+        # fetch iss position data
         fetch_url = os.environ["ISS_TRACK_URL"]  
         fetch_max_retries = int(os.getenv("FETCH_MAX_RETRIES", str(5)))
         fetch_retry_delay = int(os.getenv("FETCH_RETRY_DELAY_SECONDS",str(3)))
-        fetch_timeout_seconds = int(os.getenv("FETCH_TIMEOUT_SECONDS", str(10)))
+        fetch_timeout_seconds = int(os.getenv("FETCH_TIMEOUT_SECONDS", str(10)))        
         response_dict = fetch_iss_data_json(fetch_url, fetch_max_retries, 
                                             fetch_retry_delay, fetch_timeout_seconds)
+        
+        # transform response
         item = transform_to_db_entry(response_dict)   
-        write_to_db(item)
+        
+        # write to db
+        write_to_db(db_table, item)
 
         # check if pushgateway is configured (optional dependency)
         # before trying to push prometheus metric

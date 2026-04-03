@@ -4,8 +4,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import httpx
 
-sys.modules["database"] = MagicMock()
-
 def test_fetch_success():
     """
     Test case verifies response of successful fetch to remote endpoint. 
