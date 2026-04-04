@@ -4,7 +4,7 @@ services:
     image: amazon/dynamodb-local:latest
     container_name: dynamodb-local
     ports:
-      - "8000:8000"
+      - "8001:8000"
     command: ["-jar", "DynamoDBLocal.jar", "-inMemory"]
     healthcheck:
       # HACK: amazon/dynamodb-local has neither curl nor wget, so we can't do a real HTTP healthcheck.
@@ -38,7 +38,7 @@ services:
 
   poller:
     build:
-      context: .
+      context: ./poller
       dockerfile: Dockerfile
     container_name: iss-poller
     depends_on:
@@ -46,7 +46,21 @@ services:
         condition: service_completed_successfully
       pushgateway:
         condition: service_started
-    env_file: .env
+    env_file: ./poller/.env
     environment:
       DYNAMODB_ENDPOINT_URL: http://dynamodb-local:8000
       PUSHGATEWAY_URL: http://pushgateway:9091
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: iss-api
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+    env_file: ./api/.env
+    environment:
+      DYNAMODB_ENDPOINT_URL: http://dynamodb-local:8000
+    ports:
+      - "8000:8000"
