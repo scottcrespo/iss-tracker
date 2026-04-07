@@ -81,4 +81,4 @@ module "terraform_role" {
 | `group_name` | Name of the IAM group permitted to assume the terraform role | no |
 | `permission_boundary_arn` | ARN of the permissions boundary policy | yes |
 
-.
+..

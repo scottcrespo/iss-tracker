@@ -13,9 +13,6 @@ name: Terraform Dev CI
 # the commented template below.
 on:
   push:
-    branches:
-      - develop   # apply to dev environment
-      - main      # apply to prod environment
     paths:
       - "terraform/**"
       - "!terraform/environments/dev/global/bootstrap/**"
