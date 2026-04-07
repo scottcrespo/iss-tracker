@@ -35,3 +35,25 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+########################
+# Ignore Docs (for now)
+#######################
+docs/
+
+
+###################################
+DOCS
+###################################
+
+# local design decision notes - content may be promoted to README
+docs/decisions/
+
+###################################
+PYTHON
+###################################
+
+.venv/
+**/__pycache__/
+*.py[cod]
+*.env
+env.sh
