@@ -10,7 +10,7 @@ terraform {
 
   backend "s3" {
     bucket = "iss-tracker-tfstate-dev"
-    key = "dev/global/bootstrap/terraform.tfstate"
+    key = "dev/global/bootstrap/s3-tfstate/terraform.tfstate"
     region = "us-east-2"
     encrypt = true
     use_lockfile = true
