@@ -1,0 +1,130 @@
+name: Terraform Dev CI
+
+# Triggers on changes to non-bootstrap terraform roots.
+# Bootstrap roots are excluded — they require admin credentials and are run manually.
+# See terraform-bootstrap-ci.yml for bootstrap lint/validate coverage.
+#
+# Job structure per root:
+#   lint-and-validate  — always runs on push and PR
+#   plan-{root}        — runs on PR only (needs: lint-and-validate)
+#   apply-{root}       — runs on push to main only (needs: lint-and-validate)
+#
+# When a new non-bootstrap root is added, add a plan and apply job following
+# the commented template below.
+on:
+  push:
+    paths:
+      - "terraform/**"
+      - "!terraform/environments/dev/global/bootstrap/**"
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - "terraform/**"
+      - "!terraform/environments/dev/global/bootstrap/**"
+
+jobs:
+  lint-and-validate:
+    name: Lint and Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive terraform/
+
+  # Add plan and apply jobs here as non-bootstrap roots are provisioned.
+  # Copy this template for each new root:
+  #
+  # Manual approval flow:
+  #   plan  → uploads plan output as artifact
+  #   apply → references a GitHub Environment with required reviewers configured
+  #           (Settings → Environments → dev or prod → add reviewer)
+  #           GitHub pauses the apply job and notifies the reviewer. The reviewer
+  #           downloads the plan artifact, inspects it, then approves or rejects.
+  #           Only after approval does the apply job run.
+  #
+  # plan-{root-slug}:
+  #   name: Plan — {region}/{root}
+  #   runs-on: ubuntu-latest
+  #   needs: lint-and-validate
+  #   if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_version: "1.14.8"
+  #
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/terraform-dev
+  #         aws-region: us-east-2
+  #
+  #     - name: Terraform Init
+  #       working-directory: terraform/environments/dev/{region}/{root}
+  #       run: terraform init
+  #
+  #     - name: Terraform Plan
+  #       working-directory: terraform/environments/dev/{region}/{root}
+  #       run: terraform plan -input=false -out=tfplan
+  #
+  #     - name: Upload plan artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: tfplan-{root-slug}
+  #         path: terraform/environments/dev/{region}/{root}/tfplan
+  #         retention-days: 3
+  #
+  # apply-{root-slug}:
+  #   name: Apply — {region}/{root}
+  #   runs-on: ubuntu-latest
+  #   needs: plan-{root-slug}
+  #   # develop → dev environment, main → prod environment
+  #   # The 'environment' key is what triggers the manual approval gate.
+  #   # Configure required reviewers in Settings → Environments → dev (or prod).
+  #   environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_version: "1.14.8"
+  #
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/terraform-dev
+  #         aws-region: us-east-2
+  #
+  #     - name: Download plan artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: tfplan-{root-slug}
+  #         path: terraform/environments/dev/{region}/{root}
+  #
+  #     - name: Terraform Init
+  #       working-directory: terraform/environments/dev/{region}/{root}
+  #       run: terraform init
+  #
+  #     - name: Terraform Apply
+  #       working-directory: terraform/environments/dev/{region}/{root}
+  #       run: terraform apply -input=false tfplan

@@ -9,10 +9,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "iss-tracker-tfstate-dev"
-    key = "dev/global/bootstrap/iam-role-terraform-dev/terraform.tfstate"
-    region = "us-east-2"
-    encrypt = true
+    bucket       = "iss-tracker-tfstate-dev"
+    key          = "dev/global/bootstrap/iam-role-terraform-dev/terraform.tfstate"
+    region       = "us-east-2"
+    encrypt      = true
     use_lockfile = true
-  }  
+  }
 }
