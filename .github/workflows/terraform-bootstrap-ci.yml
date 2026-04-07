@@ -1,0 +1,49 @@
+name: Terraform Bootstrap CI
+
+# Triggers on changes to bootstrap roots or shared modules.
+# Bootstrap roots require admin credentials and are never planned/applied in CI —
+# only formatting and validation are checked here.
+#
+# Bootstrap roots (run manually with admin credentials):
+#   - terraform/environments/dev/global/bootstrap/s3-tfstate
+#   - terraform/environments/dev/global/bootstrap/iam-role-terraform-dev
+#
+# If you add a new bootstrap root, add a validate step below following the
+# existing pattern. Do NOT add plan or apply jobs to this file.
+on:
+  push:
+    paths:
+      - "terraform/environments/dev/global/bootstrap/**"
+      - "terraform/modules/**"
+  pull_request:
+    paths:
+      - "terraform/environments/dev/global/bootstrap/**"
+      - "terraform/modules/**"
+
+jobs:
+  lint-and-validate:
+    name: Lint and Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Validate — s3-tfstate
+        working-directory: terraform/environments/dev/global/bootstrap/s3-tfstate
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate — iam-role-terraform-dev
+        working-directory: terraform/environments/dev/global/bootstrap/iam-role-terraform-dev
+        run: |
+          terraform init -backend=false
+          terraform validate
