@@ -12,10 +12,10 @@ provider "aws" {
 
 module "ecr_api" {
   source          = "../../../../modules/ecr"
-  repository_name = "iss-api"
+  repository_name = "iss-tracker-api"
 }
 
 module "ecr_poller" {
   source          = "../../../../modules/ecr"
-  repository_name = "iss-poller"
+  repository_name = "iss-tracker-poller"
 }

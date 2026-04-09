@@ -135,6 +135,21 @@ run "max_tagged_images_custom_value" {
   }
 }
 
+# --- lifecycle policy tag status ---
+
+run "tagged_image_rule_uses_any_tag_status" {
+  command = plan
+
+  variables {
+    repository_name = "iss-api"
+  }
+
+  assert {
+    condition     = jsondecode(aws_ecr_lifecycle_policy.this.policy).rules[1].selection.tagStatus == "any"
+    error_message = "Expected tagged image count rule to use tagStatus 'any'"
+  }
+}
+
 # --- scan_on_push ---
 
 run "scan_on_push_always_enabled" {
