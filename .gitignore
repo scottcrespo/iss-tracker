@@ -37,6 +37,13 @@ override.tf.json
 terraform.rc
 
 ###################################
+# Custom Terraform Ignores
+###################################
+
+# ignore lockfiles in modules that are product of running tests
+terraform/modules/**/.terraform.lock.hcl
+
+###################################
 PYTHON
 ###################################
 

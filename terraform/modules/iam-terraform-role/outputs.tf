@@ -17,5 +17,5 @@ output "permission_boundary_arn" {
 
 output "group_name" {
   description = "Name of the IAM group permitted to assume the terraform role"
-  value       = aws_iam_group.terraform_group.name
+  value       = var.trust_type == "iam" ? aws_iam_group.terraform_group[0].name : ""
 }

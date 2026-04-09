@@ -46,6 +46,22 @@ Bootstrap Terraform roots (`s3-tfstate`, `iam-role-terraform-dev`) are covered b
 
 Non-bootstrap roots live in `terraform-dev-ci.yml` and are designed for full plan/apply automation as roots are provisioned.
 
+## Terraform plan/apply not executed in public CI
+
+Terraform plan and apply jobs are designed and documented in `terraform-dev-ci.yml` but are not connected to a live AWS account in this public repository. The reason: GitHub Actions logs on public repositories are publicly visible, and there is no reliable way to suppress all sensitive output. Terraform, the AWS provider, and action steps can all emit AWS account IDs and ARNs — from state reads, error messages, and provider debug output — regardless of stdout suppression.
+
+The correct production solution is one of:
+- **Private runners** (self-hosted or GitHub's larger runners with restricted log visibility)
+- **Private repository** where Actions logs are not publicly accessible
+
+The full CI architecture is implemented and documented: IAM roles with OIDC federation, separate plan vs apply roles, and manual approval gates. The design is production-ready — it just isn't wired to a live account from a public repo.
+
+## Terraform apply requires manual approval
+
+When plan/apply jobs are enabled (private repo or private runners), apply jobs reference a GitHub Environment (`dev` or `prod`) configured with required reviewers in repo Settings → Environments. GitHub pauses the apply job after the plan completes and sends an approval notification. The reviewer inspects the plan locally, then approves or rejects. Infrastructure changes are never applied automatically without a human in the loop.
+
+Plan files are saved as a binary (`terraform plan -out=tfplan`) and passed between jobs as a GitHub Actions artifact. The apply job downloads the artifact and runs `terraform apply -input=false tfplan`, guaranteeing it executes exactly what was reviewed rather than re-planning from scratch. On a private repo or with private runners, GitHub Actions artifacts are not publicly accessible so this is safe — no S3 indirection needed.
+
 ## Trivy for container image scanning
 
 Container images are scanned with Trivy (`aquasecurity/trivy-action`) as part of the `build-and-scan` job in both app pipelines. Trivy is open source, integrates directly as a GitHub Action, and covers OS and language-level CVEs. The scan is configured to:

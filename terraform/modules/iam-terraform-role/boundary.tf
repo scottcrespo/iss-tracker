@@ -1,5 +1,5 @@
 resource "aws_iam_policy" "permission_boundary" {
-  name = "terraform-${var.environment}-boundary-for-provisioned-roles"
+  name = "${var.role_name}-boundary-for-provisioned-roles"
 
   policy = jsonencode({
     Version = "2012-10-17"

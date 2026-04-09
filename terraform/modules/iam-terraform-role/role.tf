@@ -1,7 +1,5 @@
-resource "aws_iam_role" "terraform_role" {
-  name = "terraform-${var.environment}"
-
-  assume_role_policy = jsonencode({
+locals {
+  trust_policy = var.trust_type == "iam" ? jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
@@ -13,8 +11,33 @@ resource "aws_iam_role" "terraform_role" {
         }
       }
     ]
+    }) : jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowGithubOIDCAssumeRole"
+        Effect = "Allow"
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Principal = {
+          Federated = var.oidc_provider_arn
+        }
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = var.oidc_subjects
+          }
+        }
+      }
+    ]
   })
-  tags = var.tags
+}
+
+resource "aws_iam_role" "terraform_role" {
+  name               = var.role_name
+  assume_role_policy = local.trust_policy
+  tags               = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "terraform_role_managed_policies" {
@@ -24,8 +47,9 @@ resource "aws_iam_role_policy_attachment" "terraform_role_managed_policies" {
 }
 
 resource "aws_iam_role_policy" "terraform_role_inline" {
-  name = "inline-policy-for-terraform-${var.environment}-role"
-  role = aws_iam_role.terraform_role.name
+  count = var.role_type == "full" ? 1 : 0
+  name  = "inline-policy-for-${aws_iam_role.terraform_role.name}-role"
+  role  = aws_iam_role.terraform_role.name
 
   policy = jsonencode({
     Version = "2012-10-17"
