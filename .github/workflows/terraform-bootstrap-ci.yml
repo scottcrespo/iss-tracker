@@ -6,7 +6,10 @@ name: Terraform Bootstrap CI
 #
 # Bootstrap roots (run manually with admin credentials):
 #   - terraform/environments/dev/global/bootstrap/s3-tfstate
-#   - terraform/environments/dev/global/bootstrap/iam-role-terraform-dev
+#   - terraform/environments/dev/global/bootstrap/iam-terraform-role-human
+#   - terraform/environments/dev/global/bootstrap/iam-oidc-provider-github
+#   - terraform/environments/dev/global/bootstrap/iam-terraform-role-oidc-plan
+#   - terraform/environments/dev/global/bootstrap/iam-terraform-role-oidc-apply
 #
 # Module tests and non-bootstrap roots are handled by terraform-dev-ci.yml.
 # If you add a new bootstrap root, add a validate step below following the
@@ -41,9 +44,26 @@ jobs:
           terraform init -backend=false
           terraform validate
 
-      - name: Validate — iam-role-terraform-dev
-        working-directory: terraform/environments/dev/global/bootstrap/iam-role-terraform-dev
+      - name: Validate — iam-terraform-role-human
+        working-directory: terraform/environments/dev/global/bootstrap/iam-terraform-role-human
         run: |
           terraform init -backend=false
           terraform validate
 
+      - name: Validate — iam-oidc-provider-github
+        working-directory: terraform/environments/dev/global/bootstrap/iam-oidc-provider-github
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate — iam-terraform-role-oidc-plan
+        working-directory: terraform/environments/dev/global/bootstrap/iam-terraform-role-oidc-plan
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate — iam-terraform-role-oidc-apply
+        working-directory: terraform/environments/dev/global/bootstrap/iam-terraform-role-oidc-apply
+        run: |
+          terraform init -backend=false
+          terraform validate
