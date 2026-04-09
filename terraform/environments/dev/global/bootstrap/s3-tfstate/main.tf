@@ -1,5 +1,13 @@
 provider "aws" {
   region = "us-east-2"
+
+  default_tags {
+    tags = {
+      terraform_managed = "true"
+      project           = "iss-tracker"
+      environment       = "dev"
+    }
+  }
 }
 
 resource "aws_s3_bucket" "terraform_state" {

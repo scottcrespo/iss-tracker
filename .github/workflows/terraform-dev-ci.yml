@@ -40,22 +40,54 @@ jobs:
       - name: Check formatting
         run: terraform fmt -check -recursive terraform/
 
-  # Add plan and apply jobs here as non-bootstrap roots are provisioned.
-  # Copy this template for each new root:
+  test-modules:
+    name: Module Tests
+    runs-on: ubuntu-latest
+    needs: lint-and-validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Test — iam-terraform-role
+        working-directory: terraform/modules/iam-terraform-role
+        # Uses mock_provider so no AWS credentials are required
+        run: |
+          terraform init
+          terraform test
+
+      - name: Test — ecr
+        working-directory: terraform/modules/ecr
+        # Uses mock_provider so no AWS credentials are required
+        run: |
+          terraform init
+          terraform test
+
+  # plan and apply jobs are not implemented for this public repository.
   #
-  # Manual approval flow:
-  #   plan  → uploads plan output as artifact
-  #   apply → references a GitHub Environment with required reviewers configured
-  #           (Settings → Environments → dev or prod → add reviewer)
-  #           GitHub pauses the apply job and notifies the reviewer. The reviewer
-  #           downloads the plan artifact, inspects it, then approves or rejects.
-  #           Only after approval does the apply job run.
+  # Terraform plan output contains fully resolved resource attributes (account IDs,
+  # ARNs, policy documents) sourced from state. On a public repo, GitHub Actions logs
+  # are publicly visible and there is no reliable way to suppress all sensitive output —
+  # Terraform, provider plugins, and action steps can all emit values that should not
+  # be public.
+  #
+  # The correct production solution is private runners (self-hosted or GitHub's larger
+  # runners with restricted log access), or a private repository. The IAM roles,
+  # OIDC federation pattern, and manual approval gate are all designed and documented —
+  # see docs/decisions/cicd/cicd.md and docs/decisions/terraform/iam-terraform-role.md.
+  #
+  # When moving to a private repo or private runners, add plan and apply jobs here
+  # following this template:
   #
   # plan-{root-slug}:
   #   name: Plan — {region}/{root}
   #   runs-on: ubuntu-latest
-  #   needs: lint-and-validate
-  #   if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+  #   needs: test-modules
+  #   if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
   #   permissions:
   #     id-token: write
   #     contents: read
@@ -71,7 +103,10 @@ jobs:
   #     - name: Configure AWS credentials
   #       uses: aws-actions/configure-aws-credentials@v4
   #       with:
-  #         role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/terraform-dev
+  #         # PRs use the plan-only role — read-only, trusts pull_request OIDC subject
+  #         # Push to develop/main uses the full role — trusts branch refs only
+  #         # Role ARNs stored as secrets to avoid account ID in workflow file
+  #         role-to-assume: ${{ github.event_name == 'pull_request' && secrets.TF_ROLE_GITHUB_PLAN || secrets.TF_ROLE_GITHUB }}
   #         aws-region: us-east-2
   #
   #     - name: Terraform Init
@@ -93,9 +128,9 @@ jobs:
   #   name: Apply — {region}/{root}
   #   runs-on: ubuntu-latest
   #   needs: plan-{root-slug}
-  #   # develop → dev environment, main → prod environment
-  #   # The 'environment' key is what triggers the manual approval gate.
+  #   # The 'environment' key triggers the manual approval gate.
   #   # Configure required reviewers in Settings → Environments → dev (or prod).
+  #   # develop → dev environment, main → prod environment
   #   environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
   #   permissions:
   #     id-token: write
@@ -112,7 +147,7 @@ jobs:
   #     - name: Configure AWS credentials
   #       uses: aws-actions/configure-aws-credentials@v4
   #       with:
-  #         role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/terraform-dev
+  #         role-to-assume: ${{ secrets.TF_ROLE_GITHUB }}
   #         aws-region: us-east-2
   #
   #     - name: Download plan artifact
@@ -127,4 +162,5 @@ jobs:
   #
   #     - name: Terraform Apply
   #       working-directory: terraform/environments/dev/{region}/{root}
+  #       # Applies exactly the plan that was reviewed — not a fresh plan
   #       run: terraform apply -input=false tfplan

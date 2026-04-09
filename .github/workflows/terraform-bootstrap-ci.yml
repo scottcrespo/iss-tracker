@@ -1,6 +1,6 @@
 name: Terraform Bootstrap CI
 
-# Triggers on changes to bootstrap roots or shared modules.
+# Triggers on changes to bootstrap roots only.
 # Bootstrap roots require admin credentials and are never planned/applied in CI —
 # only formatting and validation are checked here.
 #
@@ -8,17 +8,16 @@ name: Terraform Bootstrap CI
 #   - terraform/environments/dev/global/bootstrap/s3-tfstate
 #   - terraform/environments/dev/global/bootstrap/iam-role-terraform-dev
 #
+# Module tests and non-bootstrap roots are handled by terraform-dev-ci.yml.
 # If you add a new bootstrap root, add a validate step below following the
 # existing pattern. Do NOT add plan or apply jobs to this file.
 on:
   push:
     paths:
       - "terraform/environments/dev/global/bootstrap/**"
-      - "terraform/modules/**"
   pull_request:
     paths:
       - "terraform/environments/dev/global/bootstrap/**"
-      - "terraform/modules/**"
 
 jobs:
   lint-and-validate:
@@ -47,3 +46,4 @@ jobs:
         run: |
           terraform init -backend=false
           terraform validate
+

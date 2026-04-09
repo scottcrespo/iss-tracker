@@ -64,5 +64,32 @@ An IAM group (`terraform-{environment}`) is used to control which users can assu
 ## Permissions boundary in the module, not bootstrap
 The permissions boundary policy is provisioned inside the `iam-terraform-role` module rather than as a standalone bootstrap resource. This keeps the boundary tightly coupled to the role it protects — if you provision a terraform role for a new environment, the boundary is automatically created and wired in. The boundary is environment-specific (scoped to the module's `project_scope_limit_prefix`) so sharing it across environments is not appropriate.
 
+## Separate roles per principal type and permission level
+
+Three terraform IAM roles are provisioned, each with a distinct trust policy and permission scope:
+
+| Role | Trust | `role_type` | Used for |
+|------|-------|-------------|----------|
+| `terraform-dev-human` | IAM group | `full` | Human operators running plan/apply locally |
+| `terraform-dev-github` | OIDC, `develop`/`main` refs only | `full` | CI apply jobs after merge to protected branches |
+| `terraform-dev-github-plan` | OIDC, `pull_request` subject | `plan` | CI plan jobs on pull requests (read-only) |
+
+### Why separate roles matter
+CloudTrail logs identify changes by role ARN. Separate roles give instant traceability — a change made by `terraform-dev-github` was an automated CI apply; a change made by `terraform-dev-human` was a manual operator action. If a security incident occurs, the blast radius and investigation scope are immediately narrower.
+
+### The plan role: security boundary for PRs
+The OIDC `sub` claim for pull requests is `repo:{org}/{repo}:pull_request` — it does not include a branch name. This means any branch in the repository can open a PR and trigger a workflow. Giving the full apply role to PR workflows would allow untrusted feature branches to assume a role with infrastructure write permissions.
+
+The `terraform-dev-github-plan` role solves this:
+- Trust policy only allows the `pull_request` OIDC subject
+- `role_type = "plan"` skips the inline IAM write policy entirely
+- Only `ReadOnlyAccess` is attached as a managed policy
+- Even if a compromised PR workflow tried to apply, it has no write permissions
+
+The full `terraform-dev-github` role trust policy is restricted to `refs/heads/develop` and `refs/heads/main` — only merges to protected branches can assume it.
+
+### Module implementation
+The `iam-terraform-role` module exposes `role_type` (`full` or `plan`) to control whether the inline IAM write policy is created. The `count = var.role_type == "full" ? 1 : 0` condition on `aws_iam_role_policy.terraform_role_inline` skips the policy entirely for plan roles — no custom conditions or partial policy documents needed.
+
 ## Sensitive outputs for ARNs
 `role_arn` and `permission_boundary_arn` outputs are marked `sensitive = true`. ARNs contain the AWS account ID, which should not appear in `terraform plan` or `terraform apply` console output — especially important for public repos where GitHub Actions logs are publicly visible. Sensitive outputs are still fully usable in Terraform expressions and module composition.

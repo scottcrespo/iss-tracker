@@ -1,5 +1,13 @@
 provider "aws" {
   region = "us-east-2"
+
+  default_tags {
+    tags = {
+      terraform_managed = "true"
+      project           = "iss-tracker"
+      environment       = "dev"
+    }
+  }
 }
 
 # get account ID without having to store it
@@ -8,10 +16,10 @@ data "aws_caller_identity" "current" {}
 # get current aws region
 data "aws_region" "current" {}
 
-module "terraform_role" {
+module "terraform_role_human" {
   source = "../../../../../modules/iam-terraform-role"
 
-  account_id  = data.aws_caller_identity.current.account_id
+  account_id  = sensitive(data.aws_caller_identity.current.account_id)
   environment = "dev"
   permission_boundary_allowed_managed_policies = [
     "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess_v2",
@@ -19,6 +27,7 @@ module "terraform_role" {
   ]
   project_scope_limit_prefix = "iss-tracker"
   region                     = data.aws_region.current.name
+  role_name                  = "terraform-dev-human"
   tags = {
     environment = "dev"
   }
@@ -31,5 +40,5 @@ module "terraform_role" {
     "arn:aws:iam::aws:policy/CloudWatchFullAccessV2",
     "arn:aws:iam::aws:policy/IAMReadOnlyAccess",
   ]
-
+  trust_type = "iam"
 }
