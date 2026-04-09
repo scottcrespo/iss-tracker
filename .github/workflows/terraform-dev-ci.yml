@@ -53,8 +53,29 @@ jobs:
         with:
           terraform_version: "1.14.8"
 
-      - name: Test — iam-terraform-role
-        working-directory: terraform/modules/iam-terraform-role
+      - name: Test — iam-permission-boundary
+        working-directory: terraform/modules/iam-permission-boundary
+        # Uses mock_provider so no AWS credentials are required
+        run: |
+          terraform init
+          terraform test
+
+      - name: Test — iam-terraform-role-human
+        working-directory: terraform/modules/iam-terraform-role-human
+        # Uses mock_provider so no AWS credentials are required
+        run: |
+          terraform init
+          terraform test
+
+      - name: Test — iam-terraform-role-oidc-plan
+        working-directory: terraform/modules/iam-terraform-role-oidc-plan
+        # Uses mock_provider so no AWS credentials are required
+        run: |
+          terraform init
+          terraform test
+
+      - name: Test — iam-terraform-role-oidc-apply
+        working-directory: terraform/modules/iam-terraform-role-oidc-apply
         # Uses mock_provider so no AWS credentials are required
         run: |
           terraform init
