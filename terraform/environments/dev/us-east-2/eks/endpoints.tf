@@ -12,6 +12,22 @@ resource "aws_security_group" "vpc_endpoints" {
   name        = "${local.cluster_name}-vpc-endpoints"
   description = "Allow HTTPS from within the VPC to interface endpoints"
   vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description = "HTTPS from VPC"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [local.vpc_cidr]
+  }
+
+  egress {
+    description = "Allow all outbound within VPC"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [local.vpc_cidr]
+  }
 }
 
 module "vpc_endpoints" {
@@ -21,25 +37,6 @@ module "vpc_endpoints" {
   vpc_id = module.vpc.vpc_id
 
   security_group_ids = [aws_security_group.vpc_endpoints.id]
-
-  security_group_rules = {
-    ingress_https = {
-      description = "HTTPS from VPC"
-      type        = "ingress"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = [local.vpc_cidr]
-    }
-    egress_all = {
-      description = "Allow all outbound within VPC"
-      type        = "egress"
-      from_port   = 0
-      to_port     = 0
-      protocol    = "-1"
-      cidr_blocks = [local.vpc_cidr]
-    }
-  }
 
   endpoints = {
     # S3 — gateway endpoint (free, required for ECR image layer pulls)
