@@ -187,6 +187,15 @@ module "vpc" {
       to_port     = 65535
       cidr_block  = local.vpc_cidr
     },
+    # Return traffic from internet (bastion outbound connections - SSM, helm, kubectl)
+    {
+      rule_number = 130
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "0.0.0.0/0"
+    },
   ]
   public_outbound_acl_rules = [
     # Return traffic to internet clients
@@ -206,6 +215,15 @@ module "vpc" {
       from_port   = 8000
       to_port     = 8000
       cidr_block  = local.vpc_cidr
+    },
+    # Bastion HTTPS to internet (helm repos, kubectl downloads)
+    {
+      rule_number = 120
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 443
+      to_port     = 443
+      cidr_block  = "0.0.0.0/0"
     },
   ]
 
