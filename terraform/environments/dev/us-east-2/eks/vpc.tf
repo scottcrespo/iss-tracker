@@ -34,7 +34,7 @@ module "vpc" {
       to_port     = "53"
       cidr_block  = local.vpc_cidr
     },
-    # Ephemeral Ports
+    # Ephemeral ports from VPC (return traffic from VPC endpoints)
     {
       rule_number = "130"
       rule_action = "allow"
@@ -43,9 +43,18 @@ module "vpc" {
       to_port     = "65535"
       cidr_block  = local.vpc_cidr
     },
+    # Ephemeral ports from internet (return traffic from S3 gateway endpoint)
+    {
+      rule_number = "140"
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = "1024"
+      to_port     = "65535"
+      cidr_block  = "0.0.0.0/0"
+    },
     # ICMP type 3 — Destination Unreachable (includes Path MTU Discovery)
     {
-      rule_number = 140
+      rule_number = 150
       rule_action = "allow"
       protocol    = "icmp"
       from_port   = -1 # not used for icmp, but required by the module
@@ -56,7 +65,7 @@ module "vpc" {
     },
     # ICMP type 8 — Echo Request (ping inbound)
     {
-      rule_number = 150
+      rule_number = 160
       rule_action = "allow"
       protocol    = "icmp"
       from_port   = -1
@@ -67,7 +76,7 @@ module "vpc" {
     },
     # ICMP type 0 — Echo Reply (ping outbound)
     {
-      rule_number = 160
+      rule_number = 170
       rule_action = "allow"
       protocol    = "icmp"
       from_port   = -1
@@ -78,7 +87,7 @@ module "vpc" {
     },
     # API traffic from load balancer in public subnets
     {
-      rule_number = 170
+      rule_number = 180
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 8000
@@ -87,14 +96,15 @@ module "vpc" {
     },
   ]
   intra_outbound_acl_rules = [
-    # HTTPS — pods to VPC endpoints, pods to control plane ENIs
+    # HTTPS — VPC endpoints, control plane ENIs, and S3 gateway endpoint
+    # (S3 layer bucket IPs are public; routing layer prevents internet egress)
     {
       rule_number = 100
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
-      cidr_block  = local.vpc_cidr
+      cidr_block  = "0.0.0.0/0"
     },
     # DNS TCP
     {
