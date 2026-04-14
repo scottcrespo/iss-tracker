@@ -212,4 +212,23 @@ module "vpc" {
   # Because we're using fargate, internet egress is not necessary
   enable_nat_gateway = false
   enable_vpn_gateway = false
+
+  # Subnet tags required for EKS and the AWS Load Balancer Controller to
+  # discover subnets automatically.
+  #
+  # kubernetes.io/role/elb=1          — ALB controller places public-facing
+  #                                     load balancers in these subnets
+  # kubernetes.io/role/internal-elb=1 — ALB controller places internal
+  #                                     load balancers in these subnets
+  # kubernetes.io/cluster/<name>=shared — marks subnets as available to the
+  #                                       cluster for ENI placement
+  public_subnet_tags = {
+    "kubernetes.io/role/elb"                        = "1"
+    "kubernetes.io/cluster/${local.cluster_name}"   = "shared"
+  }
+
+  intra_subnet_tags = {
+    "kubernetes.io/role/internal-elb"               = "1"
+    "kubernetes.io/cluster/${local.cluster_name}"   = "shared"
+  }
 }
