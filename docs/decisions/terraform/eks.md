@@ -1,0 +1,71 @@
+# EKS Cluster — Design Decisions
+
+> These notes were generated with AI assistance (Claude), prompted to summarize key design decisions and their rationale as development progressed. All decisions reflect choices made during active development.
+
+## Fargate workers
+
+Fargate is used instead of managed node groups. Workers run on AWS-managed infrastructure — there are no EC2 nodes to patch, scale, or manage.
+
+### Tradeoffs accepted
+- No DaemonSets. Node-level agents (node-exporter, Fluentd as a DaemonSet) cannot run on Fargate. Observability tooling must be adapted — see the observability decisions in `docs/decisions/k8s/k8s.md`.
+- CoreDNS must be patched to run on Fargate. The EKS Terraform module handles this but it is a required configuration step.
+- Slightly higher per-vCPU/memory cost than EC2 for sustained workloads. Acceptable for a demonstration project where operational simplicity and cost predictability matter more than raw cost efficiency.
+
+### Why this is the right call for this project
+The project exists to demonstrate platform engineering skills, not to operate production infrastructure at scale. Fargate eliminates node group sizing, AMI management, and cluster autoscaler configuration — all of which would add complexity without adding learning value relative to the project's goals. The tradeoffs are documented and defensible.
+
+## VPC design
+
+A dedicated VPC is provisioned using `terraform-aws-modules/vpc`. No default VPC resources are used.
+
+### Subnet layout
+
+| Subnet type | Used for | Internet egress |
+|-------------|----------|----------------|
+| Public | Load balancers only | Yes (IGW) |
+| Intra | Fargate pods, EKS nodes | None |
+
+Fargate pods run in intra subnets — no NAT gateway, no internet route. This is intentional: workloads should not have direct internet egress. All outbound AWS service access is handled through VPC endpoints.
+
+### VPC endpoints
+
+Because intra subnets have no internet route, all AWS service communication requires VPC endpoints. The following endpoints are required for Fargate pods to function:
+
+| Service | Endpoint type | Purpose |
+|---------|--------------|---------|
+| `ecr.api` | Interface | ECR image metadata |
+| `ecr.dkr` | Interface | ECR image layer pulls |
+| `s3` | Gateway | ECR stores image layers in S3 |
+| `logs` | Interface | CloudWatch log delivery |
+| `sts` | Interface | IRSA token exchange |
+| `eks` | Interface | Cluster API communication |
+
+A missing endpoint produces cryptic failures — pods stuck in `Pending` or containers failing with connection refused at startup. The endpoint list above is the minimum required set. The S3 gateway endpoint is free; interface endpoints have an hourly cost per AZ.
+
+### NACLs
+NACLs are defined explicitly rather than relying on default rules. This provides a network-layer defense-in-depth control and demonstrates understanding of the distinction between NACLs (stateless, subnet-level) and security groups (stateful, resource-level).
+
+### VPC flow logs
+Flow logs are enabled and delivered to CloudWatch. This is a standard security and observability control — required in any real production environment for incident investigation and compliance.
+
+## IAM ownership boundary
+
+Pre-built modules (`terraform-aws-modules/eks`, `terraform-aws-modules/vpc`) are used for infrastructure provisioning. All IAM policy content remains caller-defined — modules may provision IAM resources but do not define policy documents.
+
+Specifically:
+- The EKS module is permitted to create the cluster OIDC provider
+- All IRSA role trust policies and permission policies are defined in this codebase, consuming the OIDC provider ARN output from the EKS module
+- Node group and cluster IAM roles follow the same pattern: role structure via module, policy content via caller-supplied documents
+
+This maintains the security ownership principle established in the IAM module design: the operator controls what entities can do, not just that they exist.
+
+## Pre-built vs DIY module split
+
+| Component | Approach | Rationale |
+|-----------|----------|-----------|
+| VPC | `terraform-aws-modules/vpc` | Well-understood, implemented many times previously — not differentiating |
+| EKS cluster + Fargate profiles | `terraform-aws-modules/eks` | Complex compute/networking configuration, not the learning focus |
+| Cluster IAM role | DIY | Security surface — trust policy and permissions matter |
+| Node IAM role | DIY | Defines what nodes can access — security-adjacent |
+| OIDC provider | EKS module output consumed | Avoids duplicate resource; module exposes ARN for IRSA use |
+| IRSA roles | DIY | Core learning objective; same pattern as existing OIDC role modules |
