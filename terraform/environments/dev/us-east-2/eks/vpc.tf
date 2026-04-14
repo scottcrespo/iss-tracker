@@ -223,12 +223,12 @@ module "vpc" {
   # kubernetes.io/cluster/<name>=shared — marks subnets as available to the
   #                                       cluster for ENI placement
   public_subnet_tags = {
-    "kubernetes.io/role/elb"                        = "1"
-    "kubernetes.io/cluster/${local.cluster_name}"   = "shared"
+    "kubernetes.io/role/elb"                      = "1"
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
   }
 
   intra_subnet_tags = {
-    "kubernetes.io/role/internal-elb"               = "1"
-    "kubernetes.io/cluster/${local.cluster_name}"   = "shared"
+    "kubernetes.io/role/internal-elb"             = "1"
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
   }
 }
