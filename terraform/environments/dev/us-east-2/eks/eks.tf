@@ -15,6 +15,10 @@ module "eks" {
   # Enable OIDC provider — required for IRSA
   enable_irsa = true
 
+  # Grant the IAM identity that runs terraform apply cluster admin access.
+  # Required to run kubectl commands as the same identity without a separate access entry.
+  enable_cluster_creator_admin_permissions = true
+
   # Expose the cluster API endpoint to the VPC only — not the public internet.
   # Operators access the cluster via kubectl through the VPC (or a bastion).
   endpoint_public_access  = false
