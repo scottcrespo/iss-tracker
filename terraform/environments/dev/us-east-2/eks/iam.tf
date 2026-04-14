@@ -71,45 +71,6 @@ resource "aws_iam_role_policy_attachment" "eks_fargate" {
 }
 
 # ---------------------------------------------------------------------------
-# IRSA — AWS Load Balancer Controller
-# ---------------------------------------------------------------------------
-#
-# The LB Controller runs as a Deployment in kube-system and manages ALBs on
-# behalf of Ingress resources. It needs IAM permissions to create, update,
-# and delete load balancers, target groups, listeners, and related resources.
-#
-# Trust is scoped to the exact service account the controller runs as
-# (kube-system/aws-load-balancer-controller) using StringEquals — not
-# StringLike — so no other service account can assume this role.
-#
-# The permission policy is the AWS reference policy for the LB Controller.
-# Source: https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
-
-resource "aws_iam_role" "lb_controller" {
-  name = "iss-tracker-eks-lb-controller"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowLBControllerServiceAccount"
-        Effect = "Allow"
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Principal = {
-          Federated = module.eks.oidc_provider_arn
-        }
-        Condition = {
-          StringEquals = {
-            "${module.eks.oidc_provider}:aud" = "sts.amazonaws.com"
-            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
-          }
-        }
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
 # IRSA — API
 # ---------------------------------------------------------------------------
 #
@@ -139,6 +100,32 @@ resource "aws_iam_role" "irsa_api" {
             "${module.eks.oidc_provider}:sub" = "system:serviceaccount:iss-tracker:api"
           }
         }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "irsa_api" {
+  name = "dynamodb-access"
+  role = aws_iam_role.irsa_api.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowDynamoDBAccess"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:BatchGetItem",
+          "dynamodb:BatchWriteItem",
+        ]
+        Resource = "arn:aws:dynamodb:${local.region}:${local.account_id}:table/iss-tracker-*"
       }
     ]
   })
@@ -198,27 +185,40 @@ resource "aws_iam_role_policy" "irsa_poller" {
   })
 }
 
-resource "aws_iam_role_policy" "irsa_api" {
-  name = "dynamodb-access"
-  role = aws_iam_role.irsa_api.name
+# ---------------------------------------------------------------------------
+# IRSA — AWS Load Balancer Controller
+# ---------------------------------------------------------------------------
+#
+# The LB Controller runs as a Deployment in kube-system and manages ALBs on
+# behalf of Ingress resources. It needs IAM permissions to create, update,
+# and delete load balancers, target groups, listeners, and related resources.
+#
+# Trust is scoped to the exact service account the controller runs as
+# (kube-system/aws-load-balancer-controller) using StringEquals — not
+# StringLike — so no other service account can assume this role.
+#
+# The permission policy is the AWS reference policy for the LB Controller.
+# Source: https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
 
-  policy = jsonencode({
+resource "aws_iam_role" "lb_controller" {
+  name = "iss-tracker-eks-lb-controller"
+
+  assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowDynamoDBAccess"
+        Sid    = "AllowLBControllerServiceAccount"
         Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan",
-          "dynamodb:BatchGetItem",
-          "dynamodb:BatchWriteItem",
-        ]
-        Resource = "arn:aws:dynamodb:${local.region}:${local.account_id}:table/iss-tracker-*"
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Principal = {
+          Federated = module.eks.oidc_provider_arn
+        }
+        Condition = {
+          StringEquals = {
+            "${module.eks.oidc_provider}:aud" = "sts.amazonaws.com"
+            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+          }
+        }
       }
     ]
   })
@@ -309,9 +309,9 @@ resource "aws_iam_role_policy" "lb_controller" {
         Resource = "*"
       },
       {
-        Sid    = "AllowEC2SecurityGroupTagging"
-        Effect = "Allow"
-        Action = "ec2:CreateTags"
+        Sid      = "AllowEC2SecurityGroupTagging"
+        Effect   = "Allow"
+        Action   = "ec2:CreateTags"
         Resource = "arn:aws:ec2:*:*:security-group/*"
         Condition = {
           StringEquals = {
@@ -332,7 +332,7 @@ resource "aws_iam_role_policy" "lb_controller" {
         Resource = "arn:aws:ec2:*:*:security-group/*"
         Condition = {
           Null = {
-            "aws:RequestTag/elbv2.k8s.aws/cluster" = "false"
+            "aws:RequestTag/elbv2.k8s.aws/cluster"  = "false"
             "aws:ResourceTag/elbv2.k8s.aws/cluster" = "false"
           }
         }
