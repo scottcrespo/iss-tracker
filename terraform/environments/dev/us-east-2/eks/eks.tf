@@ -15,6 +15,10 @@ module "eks" {
   # Enable OIDC provider — required for IRSA
   enable_irsa = true
 
+  # Grant the IAM identity that runs terraform apply cluster admin access.
+  # Required to run kubectl commands as the same identity without a separate access entry.
+  enable_cluster_creator_admin_permissions = true
+
   # Expose the cluster API endpoint to the VPC only — not the public internet.
   # Operators access the cluster via kubectl through the VPC (or a bastion).
   endpoint_public_access  = false
@@ -60,7 +64,7 @@ module "eks" {
       source_cluster_security_group = true
     }
     egress_vpc_443 = {
-      description = "Node to VPC endpoints"
+      description = "HTTPS to VPC interface endpoints"
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
@@ -68,4 +72,27 @@ module "eks" {
       cidr_blocks = [local.vpc_cidr]
     }
   }
+}
+
+# ---------------------------------------------------------------------------
+# Node SG — S3 egress via managed prefix list
+# ---------------------------------------------------------------------------
+#
+# ECR image layers are served from S3 presigned URLs that resolve to public
+# IPs (prod-us-east-2-starport-layer-bucket). Traffic is routed through the
+# S3 gateway endpoint and never reaches the internet — intra subnets have no
+# IGW or NAT. Security groups evaluate the raw destination IP before routing,
+# so the S3 IP range must be permitted here even though traffic stays in AWS.
+#
+# Using the S3 managed prefix list (maintained by AWS) rather than 0.0.0.0/0
+# ensures this rule is scoped to S3 IPs only and stays current automatically.
+
+resource "aws_security_group_rule" "node_egress_s3" {
+  description       = "HTTPS to S3 via gateway endpoint (ECR image layer pulls)"
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  security_group_id = module.eks.node_security_group_id
+  prefix_list_ids   = [data.aws_ec2_managed_prefix_list.s3.id]
 }

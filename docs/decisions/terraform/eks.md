@@ -45,6 +45,18 @@ A missing endpoint produces cryptic failures — pods stuck in `Pending` or cont
 ### NACLs
 NACLs are defined explicitly rather than relying on default rules. This provides a network-layer defense-in-depth control and demonstrates understanding of the distinction between NACLs (stateless, subnet-level) and security groups (stateful, resource-level).
 
+#### S3 gateway endpoint — NACL and security group behavior
+
+ECR stores image layers in S3. When Fargate pulls an image, the ECR DKR endpoint handles the manifest lookup, but the actual layer data is fetched via presigned S3 URLs that resolve to **public S3 IP addresses** (e.g., `prod-us-east-2-starport-layer-bucket.s3.us-east-2.amazonaws.com`). This traffic is routed through the S3 gateway endpoint and never reaches the internet — intra subnets have no IGW or NAT route. However, both NACLs and security groups evaluate the raw destination IP before routing takes effect, so the public S3 IP range must be explicitly permitted at both layers even though the traffic stays within AWS.
+
+**Security group:** The node security group egress rule uses the AWS-managed S3 prefix list (`com.amazonaws.us-east-2.s3`) via `prefix_list_ids`. This is precise and automatically stays current as AWS updates their IP ranges.
+
+**NACLs:** NACLs cannot reference prefix lists — only CIDR blocks. The theoretically correct approach is to enumerate the S3 prefix list entries using the `aws_ec2_managed_prefix_list_entries` data source and create one `aws_network_acl_rule` per CIDR using `for_each`. This project uses `0.0.0.0/0` in the intra subnet NACL rules instead.
+
+This is not simply a "good enough for a portfolio project" shortcut — `0.0.0.0/0` is actually the more operationally sound choice. AWS periodically updates the S3 prefix list as IP ranges change. During a `terraform apply` that reflects those changes, Terraform deletes old NACL rules and creates new ones, opening a window of partial S3 coverage. Any image pull during that window fails, and if the apply involves EKS resources, broken image pulls can cascade into failed deployments. The `0.0.0.0/0` rule never changes and carries none of that risk. The routing layer (no IGW, no NAT in intra subnets) is the durable compensating control — only gateway endpoint destinations are actually reachable regardless of what the NACL permits.
+
+This outcome also validates the original decision to place EKS nodes and Fargate pods in intra subnets. At the time, the motivation was to eliminate internet egress from workloads as a security posture. In practice, it turned out that the S3 gateway endpoint behavior forces NACL rules that appear permissive on paper. The intra subnet design is what makes those rules safe — without an IGW or NAT route, `0.0.0.0/0` in a NACL is not a meaningful exposure. A cluster placed in private subnets with a NAT gateway would face the same NACL constraint but with actual internet routing present, making the permissive rules a genuine risk rather than a theoretical one.
+
 ### VPC flow logs
 Flow logs are enabled and delivered to CloudWatch. This is a standard security and observability control — required in any real production environment for incident investigation and compliance.
 
