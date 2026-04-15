@@ -34,7 +34,7 @@ module "vpc" {
       to_port     = "53"
       cidr_block  = local.vpc_cidr
     },
-    # Ephemeral Ports
+    # Ephemeral ports from VPC (return traffic from VPC endpoints)
     {
       rule_number = "130"
       rule_action = "allow"
@@ -43,9 +43,21 @@ module "vpc" {
       to_port     = "65535"
       cidr_block  = local.vpc_cidr
     },
+    # 0.0.0.0/0 is intentional. Return traffic from S3 layer downloads arrives
+    # from public S3 IPs via the S3 gateway endpoint. Same reasoning as the
+    # outbound rule above — traffic stays within AWS, no internet route exists.
+    # See outbound rule 100 comment for the correct long-term approach.
+    {
+      rule_number = "140"
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = "1024"
+      to_port     = "65535"
+      cidr_block  = "0.0.0.0/0"
+    },
     # ICMP type 3 — Destination Unreachable (includes Path MTU Discovery)
     {
-      rule_number = 140
+      rule_number = 150
       rule_action = "allow"
       protocol    = "icmp"
       from_port   = -1 # not used for icmp, but required by the module
@@ -56,7 +68,7 @@ module "vpc" {
     },
     # ICMP type 8 — Echo Request (ping inbound)
     {
-      rule_number = 150
+      rule_number = 160
       rule_action = "allow"
       protocol    = "icmp"
       from_port   = -1
@@ -67,7 +79,7 @@ module "vpc" {
     },
     # ICMP type 0 — Echo Reply (ping outbound)
     {
-      rule_number = 160
+      rule_number = 170
       rule_action = "allow"
       protocol    = "icmp"
       from_port   = -1
@@ -78,7 +90,7 @@ module "vpc" {
     },
     # API traffic from load balancer in public subnets
     {
-      rule_number = 170
+      rule_number = 180
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 8000
@@ -87,14 +99,24 @@ module "vpc" {
     },
   ]
   intra_outbound_acl_rules = [
-    # HTTPS — pods to VPC endpoints, pods to control plane ENIs
+    # 0.0.0.0/0 is intentional. ECR layer downloads resolve to public S3 IPs
+    # (prod-us-east-2-starport-layer-bucket) which are routed through the S3
+    # gateway endpoint. Traffic never reaches the internet — intra subnets have
+    # no IGW or NAT. NACLs evaluate the raw destination IP before routing, so
+    # public S3 IPs must be permitted here even though traffic stays in AWS.
+    #
+    # The correct approach would be to enumerate the S3 managed prefix list
+    # entries (aws_ec2_managed_prefix_list_entries data source) and create one
+    # aws_network_acl_rule per CIDR using for_each — NACLs cannot reference
+    # prefix lists directly. Not implemented here: the complexity of moving
+    # away from the vpc module's NACL inputs isn't justified for this project.
     {
       rule_number = 100
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
-      cidr_block  = local.vpc_cidr
+      cidr_block  = "0.0.0.0/0"
     },
     # DNS TCP
     {
@@ -187,6 +209,15 @@ module "vpc" {
       to_port     = 65535
       cidr_block  = local.vpc_cidr
     },
+    # Return traffic from internet (bastion outbound connections - SSM, helm, kubectl)
+    {
+      rule_number = 130
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "0.0.0.0/0"
+    },
   ]
   public_outbound_acl_rules = [
     # Return traffic to internet clients
@@ -206,6 +237,15 @@ module "vpc" {
       from_port   = 8000
       to_port     = 8000
       cidr_block  = local.vpc_cidr
+    },
+    # Bastion HTTPS to internet (helm repos, kubectl downloads)
+    {
+      rule_number = 120
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 443
+      to_port     = 443
+      cidr_block  = "0.0.0.0/0"
     },
   ]
 

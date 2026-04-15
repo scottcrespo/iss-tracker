@@ -7,7 +7,8 @@ replicaCount: 2
 revisionHistoryLimit: 10
 
 image:
-  repository: public.ecr.aws/eks/aws-load-balancer-controller
+  # repository injected at install time via --set to avoid exposing account ID
+  repository: ""
   tag: v3.2.1
   pullPolicy: IfNotPresent
 

@@ -19,3 +19,8 @@ module "ecr_poller" {
   source          = "../../../../modules/ecr"
   repository_name = "iss-tracker-poller"
 }
+
+module "ecr_aws_load_balancer_controller" {
+  source          = "../../../../modules/ecr"
+  repository_name = "iss-tracker-aws-load-balancer-controller"
+}
