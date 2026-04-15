@@ -43,7 +43,10 @@ module "vpc" {
       to_port     = "65535"
       cidr_block  = local.vpc_cidr
     },
-    # Ephemeral ports from internet (return traffic from S3 gateway endpoint)
+    # 0.0.0.0/0 is intentional. Return traffic from S3 layer downloads arrives
+    # from public S3 IPs via the S3 gateway endpoint. Same reasoning as the
+    # outbound rule above — traffic stays within AWS, no internet route exists.
+    # See outbound rule 100 comment for the correct long-term approach.
     {
       rule_number = "140"
       rule_action = "allow"
@@ -96,8 +99,17 @@ module "vpc" {
     },
   ]
   intra_outbound_acl_rules = [
-    # HTTPS — VPC endpoints, control plane ENIs, and S3 gateway endpoint
-    # (S3 layer bucket IPs are public; routing layer prevents internet egress)
+    # 0.0.0.0/0 is intentional. ECR layer downloads resolve to public S3 IPs
+    # (prod-us-east-2-starport-layer-bucket) which are routed through the S3
+    # gateway endpoint. Traffic never reaches the internet — intra subnets have
+    # no IGW or NAT. NACLs evaluate the raw destination IP before routing, so
+    # public S3 IPs must be permitted here even though traffic stays in AWS.
+    #
+    # The correct approach would be to enumerate the S3 managed prefix list
+    # entries (aws_ec2_managed_prefix_list_entries data source) and create one
+    # aws_network_acl_rule per CIDR using for_each — NACLs cannot reference
+    # prefix lists directly. Not implemented here: the complexity of moving
+    # away from the vpc module's NACL inputs isn't justified for this project.
     {
       rule_number = 100
       rule_action = "allow"
