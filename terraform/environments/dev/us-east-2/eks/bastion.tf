@@ -6,8 +6,10 @@
 # private EKS endpoint. Accessed via EC2 Instance Connect Endpoint (EICE) —
 # SSH over private IP, no SSM agent required, no public key management.
 #
-# Placement: public subnet with public IP so user data can reach the internet
-# to download kubectl and helm on first boot.
+# Placement: private subnet. NAT gateway provides outbound internet so user
+# data can download kubectl and helm on first boot. No public IP is needed —
+# EICE proxies SSH to the instance's private IP, and the NAT gateway handles
+# all outbound connections.
 #
 # Teardown: destroyed alongside the rest of the EKS root on terraform destroy.
 
@@ -90,7 +92,7 @@ resource "aws_security_group_rule" "eice_egress_ssh" {
 }
 
 resource "aws_ec2_instance_connect_endpoint" "bastion" {
-  subnet_id          = module.vpc.public_subnets[0]
+  subnet_id          = module.vpc.private_subnets[0]
   security_group_ids = [aws_security_group.eice.id]
   preserve_client_ip = false
 }
@@ -191,13 +193,9 @@ data "aws_ami" "al2023" {
 resource "aws_instance" "bastion" {
   ami                    = data.aws_ami.al2023.id
   instance_type          = "t3.micro"
-  subnet_id              = module.vpc.public_subnets[0]
+  subnet_id              = module.vpc.private_subnets[0]
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
   vpc_security_group_ids = [aws_security_group.bastion.id]
-
-  # Public IP required for internet egress via IGW (kubectl, helm downloads).
-  # Inbound is restricted to SSH from the EICE only.
-  associate_public_ip_address = true
 
   user_data = <<-EOF
     #!/bin/bash
