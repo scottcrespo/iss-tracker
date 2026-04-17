@@ -361,9 +361,9 @@ module "vpc" {
 
   # Single NAT gateway for dev cost control. One per AZ would be required
   # for production HA — a single NAT GW is a single point of failure.
-  enable_nat_gateway  = true
-  single_nat_gateway  = true
-  enable_vpn_gateway  = false
+  enable_nat_gateway = true
+  single_nat_gateway = true
+  enable_vpn_gateway = false
 
   # Subnet tags required for EKS and the AWS Load Balancer Controller to
   # discover subnets automatically.
