@@ -1,0 +1,26 @@
+# SecurityGroupPolicy — iss-tracker namespace
+#
+# This manifest assigns the fargate_private security group to all pods in the
+# iss-tracker namespace. The VPC CNI controller reads this object when a pod
+# starts and attaches the specified SG to the pod's branch ENI instead of the
+# default node security group.
+#
+# On Fargate, the assigned SG REPLACES the node SG — it does not augment it.
+# The fargate_private SG therefore includes all rules the pod needs: cluster
+# control plane ingress, VPC endpoint egress, internet egress via NAT, and DNS.
+#
+# Prerequisite: the iss-tracker namespace must exist before applying this manifest.
+#
+# Do not apply this file directly. Use apply-sgp.sh, which sets FARGATE_PRIVATE_SG_ID
+# from Terraform output and substitutes it into this manifest via envsubst.
+apiVersion: vpcresources.k8s.aws/v1beta1
+kind: SecurityGroupPolicy
+metadata:
+  name: iss-tracker-private
+  namespace: iss-tracker
+spec:
+  podSelector:
+    matchLabels: {}  # empty selector matches all pods in the namespace
+  securityGroups:
+    groupIds:
+      - ${FARGATE_PRIVATE_SG_ID}

@@ -4,7 +4,135 @@ module "vpc" {
   name    = local.cluster_name
   cidr    = local.vpc_cidr
 
-  azs                         = ["us-east-2a", "us-east-2b", "us-east-2c"]
+  azs = ["us-east-2a", "us-east-2b", "us-east-2c"]
+
+  # ---------------------------------------------------------------------------
+  # Private subnets — Fargate pods that need internet egress (iss-tracker)
+  # ---------------------------------------------------------------------------
+  # NAT gateway provides outbound internet so the poller can reach the public
+  # ISS position API. A single NAT gateway is sufficient for dev — one per AZ
+  # would be required for production HA.
+  private_subnets               = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  private_dedicated_network_acl = true
+  private_inbound_acl_rules = [
+    # Return traffic from internet via NAT gateway (ISS API responses) and
+    # from VPC endpoints in intra subnets. A single 0.0.0.0/0 rule covers
+    # both: NAT returns arrive with public source IPs; VPC endpoint returns
+    # arrive with intra subnet IPs (within 0.0.0.0/0).
+    {
+      rule_number = 100
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "0.0.0.0/0"
+    },
+    # ALB forwarding to API pods
+    {
+      rule_number = 110
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 8000
+      to_port     = 8000
+      cidr_block  = local.vpc_cidr
+    },
+    # DNS responses from CoreDNS (UDP)
+    {
+      rule_number = 120
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.vpc_cidr
+    },
+    # DNS responses from CoreDNS (TCP fallback)
+    {
+      rule_number = 130
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.vpc_cidr
+    },
+    # ICMP type 3 - Destination Unreachable (Path MTU Discovery)
+    {
+      rule_number = 140
+      rule_action = "allow"
+      protocol    = "icmp"
+      from_port   = -1
+      to_port     = -1
+      icmp_type   = 3
+      icmp_code   = -1
+      cidr_block  = local.vpc_cidr
+    },
+  ]
+  private_outbound_acl_rules = [
+    # HTTPS to 0.0.0.0/0 covers two distinct paths:
+    #   1. VPC endpoint ENIs in intra subnets (10.0.51.x) — traffic stays
+    #      within the VPC via local routing
+    #   2. Internet via NAT gateway (ISS position API)
+    # See intra outbound rule 100 comment for the correct long-term NACL
+    # approach; the same S3 prefix list reasoning applies here.
+    {
+      rule_number = 100
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 443
+      to_port     = 443
+      cidr_block  = "0.0.0.0/0"
+    },
+    # HTTP to internet via NAT (ISS API may redirect HTTP -> HTTPS)
+    {
+      rule_number = 110
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 80
+      to_port     = 80
+      cidr_block  = "0.0.0.0/0"
+    },
+    # DNS to CoreDNS pods in intra subnets (UDP)
+    {
+      rule_number = 120
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.vpc_cidr
+    },
+    # DNS to CoreDNS pods in intra subnets (TCP fallback)
+    {
+      rule_number = 130
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.vpc_cidr
+    },
+    # Ephemeral return traffic to ALB in public subnets and other VPC callers
+    {
+      rule_number = 140
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = local.vpc_cidr
+    },
+    # ICMP type 3 - Destination Unreachable (Path MTU Discovery)
+    {
+      rule_number = 150
+      rule_action = "allow"
+      protocol    = "icmp"
+      from_port   = -1
+      to_port     = -1
+      icmp_type   = 3
+      icmp_code   = -1
+      cidr_block  = local.vpc_cidr
+    },
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Intra subnets — Fargate pods with no internet egress (kube-system)
+  # ---------------------------------------------------------------------------
   intra_subnets               = ["10.0.51.0/24", "10.0.52.0/24", "10.0.53.0/24"]
   intra_dedicated_network_acl = true
   intra_inbound_acl_rules = [
@@ -200,7 +328,7 @@ module "vpc" {
       to_port     = 443
       cidr_block  = "0.0.0.0/0"
     },
-    # Return traffic from API pods in intra subnets
+    # Return traffic from API pods in private subnets
     {
       rule_number = 120
       rule_action = "allow"
@@ -208,15 +336,6 @@ module "vpc" {
       from_port   = 1024
       to_port     = 65535
       cidr_block  = local.vpc_cidr
-    },
-    # Return traffic from internet (bastion outbound connections - SSM, helm, kubectl)
-    {
-      rule_number = 130
-      rule_action = "allow"
-      protocol    = "tcp"
-      from_port   = 1024
-      to_port     = 65535
-      cidr_block  = "0.0.0.0/0"
     },
   ]
   public_outbound_acl_rules = [
@@ -229,7 +348,7 @@ module "vpc" {
       to_port     = 65535
       cidr_block  = "0.0.0.0/0"
     },
-    # LB forwarding to API pods in intra subnets
+    # LB forwarding to API pods in private subnets
     {
       rule_number = 110
       rule_action = "allow"
@@ -238,19 +357,12 @@ module "vpc" {
       to_port     = 8000
       cidr_block  = local.vpc_cidr
     },
-    # Bastion HTTPS to internet (helm repos, kubectl downloads)
-    {
-      rule_number = 120
-      rule_action = "allow"
-      protocol    = "tcp"
-      from_port   = 443
-      to_port     = 443
-      cidr_block  = "0.0.0.0/0"
-    },
   ]
 
-  # Because we're using fargate, internet egress is not necessary
-  enable_nat_gateway = false
+  # Single NAT gateway for dev cost control. One per AZ would be required
+  # for production HA — a single NAT GW is a single point of failure.
+  enable_nat_gateway = true
+  single_nat_gateway = true
   enable_vpn_gateway = false
 
   # Subnet tags required for EKS and the AWS Load Balancer Controller to
@@ -269,6 +381,12 @@ module "vpc" {
 
   intra_subnet_tags = {
     "kubernetes.io/role/internal-elb"             = "1"
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
+  }
+
+  # Private subnets host iss-tracker Fargate pods. The cluster tag lets the
+  # VPC CNI discover these subnets for branch ENI placement.
+  private_subnet_tags = {
     "kubernetes.io/cluster/${local.cluster_name}" = "shared"
   }
 }

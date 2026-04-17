@@ -67,23 +67,34 @@ Internet
 ALB (public subnets)
     │
     ▼  port 8000
-API Pod (intra subnet, Fargate)
+API Pod (private subnet, Fargate)
     │
     ▼
-DynamoDB ◄─── Poller CronJob (intra subnet, Fargate)
-              (fetches from public ISS API via... not yet implemented)
+DynamoDB ◄─── Poller CronJob (private subnet, Fargate)
+                    │
+                    ▼ port 443
+              Public ISS API (via NAT gateway)
 ```
 
 ### VPC Layout
 
+The VPC uses three subnet tiers. The split between private and intra is intentional — not all workloads need internet access, and giving every pod a NAT route it doesn't need weakens the security posture.
+
 | Subnet type | CIDR | Used for | Internet egress |
 |-------------|------|----------|----------------|
 | Public | `10.0.101-103.0/24` | ALB only | Yes (IGW) |
-| Intra | `10.0.51-53.0/24` | Fargate pods | None |
+| Private | `10.0.1-3.0/24` | iss-tracker Fargate pods, bastion | Yes (NAT gateway) |
+| Intra | `10.0.51-53.0/24` | kube-system Fargate pods | None |
+
+The bastion host lives in the private subnet and uses the NAT gateway for outbound internet (kubectl/helm downloads). No public IP is assigned — EC2 Instance Connect Endpoint proxies SSH to its private IP.
+
+`kube-system` pods (CoreDNS, AWS Load Balancer Controller) run in intra subnets. They only communicate with AWS services via VPC endpoints and have no internet route.
+
+`iss-tracker` pods run in private subnets. The poller requires outbound internet access to reach the public ISS position API; the NAT gateway provides this without exposing pods to inbound connections.
 
 ### VPC Endpoints
 
-All AWS service traffic from intra subnets is routed through VPC endpoints:
+All AWS service traffic is routed through VPC endpoints. Interface endpoint ENIs are placed in the intra subnets; private subnet pods reach them via VPC-local routing. Gateway endpoints (S3, DynamoDB) are added to both intra and private route tables.
 
 | Endpoint | Type | Purpose |
 |----------|------|---------|
@@ -129,9 +140,13 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 │       ├── apps/
 │       └── cicd/
 ├── k8s/
-│   └── helm/                   # Helm charts and values
-│       ├── kube-system/        # AWS Load Balancer Controller
-│       └── iss-tracker/        # Application charts (in progress)
+│   ├── kube-system/            # Namespace: kube-system
+│   │   └── helm/
+│   │       └── aws-load-balancer-controller/
+│   └── iss-tracker/            # Namespace: iss-tracker
+│       ├── helm/               # Application Helm charts (in progress)
+│       └── manifests/
+│           └── security-group/ # SecurityGroupPolicy (SGP for private Fargate pods)
 └── terraform/
     ├── environments/
     │   └── dev/
