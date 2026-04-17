@@ -23,9 +23,52 @@ A dedicated VPC is provisioned using `terraform-aws-modules/vpc`. No default VPC
 | Subnet type | Used for | Internet egress |
 |-------------|----------|----------------|
 | Public | Load balancers only | Yes (IGW) |
-| Intra | Fargate pods, EKS nodes | None |
+| Private | iss-tracker Fargate pods, bastion host | Yes (NAT gateway) |
+| Intra | kube-system Fargate pods | None |
 
-Fargate pods run in intra subnets — no NAT gateway, no internet route. This is intentional: workloads should not have direct internet egress. All outbound AWS service access is handled through VPC endpoints.
+The VPC uses three subnet tiers rather than the conventional two (public/private). The split between private and intra is deliberate: not all workloads need internet access, and conflating "internal" with "has a NAT route" gives every workload capabilities it doesn't need.
+
+**Intra subnets** host `kube-system` pods (CoreDNS, AWS Load Balancer Controller). These workloads only communicate with AWS services via VPC endpoints — they never initiate internet connections. Placing them in subnets with no NAT route enforces that constraint at the network layer, not just at the security group layer.
+
+**Private subnets** host `iss-tracker` pods and the bastion host. The poller must reach the public ISS position API over the internet. A NAT gateway in the public subnet provides outbound internet for private subnets without exposing them to inbound connections. A single NAT gateway is used for dev cost control; production would use one per AZ for HA.
+
+The bastion sits in the private subnet rather than the public subnet. NAT gateway handles all outbound internet traffic (kubectl and helm downloads on first boot). No public IP is assigned — EC2 Instance Connect Endpoint proxies SSH to the bastion's private IP, so no inbound internet exposure is required. The public subnet is reserved exclusively for the ALB.
+
+### Fargate profile subnet pinning
+
+Without explicit `subnet_ids` on a Fargate profile, EKS schedules pods across all subnets passed to the cluster's `subnet_ids` parameter, mixing tiers. Each profile explicitly pins to its subnet tier:
+
+```hcl
+kube_system { subnet_ids = module.vpc.intra_subnets   }
+iss_tracker { subnet_ids = module.vpc.private_subnets }
+```
+
+This ensures the routing and security group design is deterministic — a `kube-system` pod will never land in a private subnet and gain NAT access it shouldn't have.
+
+### Dedicated security groups per subnet tier
+
+#### Node security group vs pod security group
+
+The EKS module creates one **node security group** that, by default, attaches to the ENI of every Fargate pod in the cluster — regardless of which Fargate profile placed the pod. The Fargate profile resource has no `security_group_ids` parameter; this is an AWS API constraint, not a module limitation.
+
+Giving both `kube-system` and `iss-tracker` pods the same SG would require adding internet egress rules to the node SG, which would grant kube-system pods permissions they don't need. The intra subnet routing would prevent them from actually reaching the internet, but defense in depth is better than relying on a single routing control.
+
+The solution is **Security Groups for Pods** (a VPC CNI feature), implemented via a `SecurityGroupPolicy` Kubernetes object. The VPC CNI controller watches for `SecurityGroupPolicy` resources and, when a pod starts, attaches the specified SG to the pod's branch ENI **instead of** the node SG. On Fargate, the SGP-assigned SG replaces rather than augments the node SG, so the assigned SG must include all rules the pod needs.
+
+Two distinct pod security groups result:
+
+| SG | Applied to | Egress |
+|----|-----------|--------|
+| Node SG (module-created) | `kube-system` pods (default, no SGP) | VPC endpoints only |
+| `fargate_private` (SGP-assigned) | `iss-tracker` pods | VPC endpoints + internet via NAT |
+
+The `SecurityGroupPolicy` manifest lives at `k8s/sgp-iss-tracker.yaml`. It targets all pods in the `iss-tracker` namespace via an empty `podSelector`. The SG ID is a Terraform output (`fargate_private_sg_id`) injected at apply time.
+
+#### Endpoint security groups per subnet tier
+
+Interface endpoints place ENIs in the intra subnets. Private subnet pods can reach those ENIs via VPC-local routing (no cross-subnet route entry needed; all subnets are within `10.0.0.0/16`). Two dedicated endpoint SGs — `vpc_endpoints_intra` and `vpc_endpoints_private` — scope ingress to their respective subnet CIDRs rather than the full VPC CIDR. Both SGs are attached to each interface endpoint so pods from either tier can reach AWS services.
+
+Gateway endpoints (S3, DynamoDB) are route-table entries with no SG. They are added to both intra and private route tables so pods in both tiers can use them.
 
 ### VPC endpoints
 
