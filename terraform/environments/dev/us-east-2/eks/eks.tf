@@ -24,6 +24,14 @@ module "eks" {
   endpoint_public_access  = false
   endpoint_private_access = true
 
+  # CoreDNS must be installed as an explicit managed add-on on Fargate-only
+  # clusters — EKS does not auto-deploy it without EC2 node groups present.
+  addons = {
+    coredns = {
+      most_recent = true
+    }
+  }
+
   # Envelope encryption for Kubernetes secrets at rest.
   # The EKS control plane uses this key to encrypt secrets before writing to
   # etcd and decrypt them on read. Key is defined in kms.tf.
