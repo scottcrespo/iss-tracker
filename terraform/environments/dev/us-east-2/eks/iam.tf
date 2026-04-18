@@ -225,6 +225,9 @@ resource "aws_iam_role" "lb_controller" {
 }
 
 resource "aws_iam_role_policy" "lb_controller" {
+  #checkov:skip=CKV_AWS_290:AWS reference policy for the Load Balancer Controller — published by kubernetes-sigs, minimum required permissions for ALB provisioning. Cannot be scoped further without breaking controller functionality.
+  #checkov:skip=CKV_AWS_355:AWS reference policy for the Load Balancer Controller requires wildcard resources for several actions (e.g. elasticloadbalancing:Describe*, ec2:Describe*) because the controller must enumerate resources it does not yet know the ARN of. Restricting these would break ALB discovery and provisioning.
+
   name = "aws-load-balancer-controller"
   role = aws_iam_role.lb_controller.name
 
