@@ -207,6 +207,10 @@ resource "aws_instance" "bastion" {
     http_put_response_hop_limit = 1
   }
 
+  root_block_device {
+    encrypted = true
+  }
+
   user_data = <<-EOF
     #!/bin/bash
     set -e

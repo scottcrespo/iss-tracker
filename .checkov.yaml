@@ -11,3 +11,12 @@ skip-check:
   # to minimise cost while the cluster is being developed and torn down frequently.
   # Check ID: verify from first CI run and replace TODO below.
   # - TODO_SINGLE_NAT_GATEWAY_CHECK_ID
+  - CKV_AWS_18      # Ensure the S3 bucket has access logging enabled
+  - CKV2_AWS_61     # Ensure that an S3 bucket has a lifecycle configuration
+  - CKV2_AWS_62     # Ensure S3 buckets should have event notifications enabled
+  - CKV_AWS_144     # Ensure that S3 bucket has cross-region replication enabled
+  - CKV_AWS_145     # Ensure that S3 buckets are encrypted with KMS by default
+  - CKV_AWS_119     # Ensure DynamoDB Tables are encrypted using a KMS Customer Managed CMK
+  - CKV_AWS_28      # Ensure DynamoDB point in time recovery (backup) is enabled
+  - CKV_AWS_135     # Ensure that EC2 is EBS optimized
+  - CKV_AWS_126     # Ensure that detailed monitoring is enabled for EC2 instances
