@@ -218,6 +218,9 @@ resource "aws_instance" "bastion" {
     # git
     dnf install -y git
 
+    # clone iss-tracker repo
+    git clone https://github.com/scottcrespo/iss-tracker.git /home/ec2-user/iss-tracker
+
     # kubectl
     curl -Lo /usr/local/bin/kubectl \
       "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"

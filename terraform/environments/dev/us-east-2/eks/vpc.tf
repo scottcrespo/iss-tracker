@@ -337,6 +337,15 @@ module "vpc" {
       to_port     = 65535
       cidr_block  = local.vpc_cidr
     },
+    # Response traffic from internet to NAT gateway (bastion/pod egress via NAT)
+    {
+      rule_number = 130
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "0.0.0.0/0"
+    },
   ]
   public_outbound_acl_rules = [
     # Return traffic to internet clients
@@ -356,6 +365,24 @@ module "vpc" {
       from_port   = 8000
       to_port     = 8000
       cidr_block  = local.vpc_cidr
+    },
+    # NAT gateway forwarding HTTPS to internet (bastion and pod egress)
+    {
+      rule_number = 120
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 443
+      to_port     = 443
+      cidr_block  = "0.0.0.0/0"
+    },
+    # NAT gateway forwarding HTTP to internet
+    {
+      rule_number = 130
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 80
+      to_port     = 80
+      cidr_block  = "0.0.0.0/0"
     },
   ]
 
