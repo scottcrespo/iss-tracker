@@ -19,7 +19,7 @@ The ISS Tracker consists of two application components backed by fully-private A
 - **Poller** — a CronJob that fetches the current ISS position from a public API and writes it to DynamoDB
 - **API** — a FastAPI service that reads position data from DynamoDB and exposes it over HTTP via an ALB
 
-Both applications run as containers on EKS Fargate inside a private VPC with no internet egress. All AWS service access (ECR, DynamoDB, STS, CloudWatch) is handled through VPC endpoints.
+Both applications run as containers on EKS Fargate inside a private VPC. All AWS service access (ECR, DynamoDB, STS, CloudWatch) is handled through VPC endpoints.
 
 ---
 
@@ -46,7 +46,7 @@ Both applications run as containers on EKS Fargate inside a private VPC with no 
 
 **No secrets in the repository.** Account IDs, role ARNs, and other sensitive values are injected at deploy time using AWS CLI lookups. The repository is safe to be public.
 
-**Private networking by default.** EKS nodes and Fargate pods run in intra subnets with no NAT gateway and no internet route. All AWS service communication uses VPC endpoints. The absence of an internet route is the primary security control — it makes permissive-looking NACL rules safe in practice.
+**Private networking by default.** EKS nodes and Fargate kube-system namespace pods run in intra subnets with no NAT gateway and no internet route. Fargate iss-tracker namespace pods run in private subnet with internet egress route via NAT gateway. All AWS service communication uses VPC endpoints. For resources deployed into intra subnets (as feasible), the absence of an internet route is the primary security control — it makes permissive-looking NACL rules safe in practice.
 
 **IAM policy content is always caller-defined.** Terraform modules provision IAM role structure; the calling root module supplies all policy documents. No module in this codebase defines what an identity is allowed to do.
 
@@ -165,13 +165,13 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 **Infrastructure — complete**
 - [x] S3 remote state with locking
 - [x] IAM bootstrap: human role, OIDC provider, plan/apply CI roles with permission boundaries
-- [x] VPC with public and intra subnets, explicit NACLs, VPC flow logs
+- [x] VPC with public, private, and intra subnets, explicit NACLs, VPC flow logs
 - [x] VPC endpoints for all required AWS services
 - [x] EKS cluster (Fargate, private endpoint only)
 - [x] IRSA roles for all workloads
 - [x] DynamoDB table for ISS position data
 - [x] ECR repositories (API, Poller, LB Controller mirror)
-- [x] SSM bastion host with EC2 Instance Connect Endpoint for private cluster access
+- [x] Bastion host with EC2 Instance Connect Endpoint for private cluster access
 - [x] AWS Load Balancer Controller installed and running
 
 **Applications — complete**
