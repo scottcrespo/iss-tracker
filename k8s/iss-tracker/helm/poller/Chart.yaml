@@ -1,0 +1,6 @@
+apiVersion: v2
+appVersion: 0.1.0
+description: CronJob that polls the ISS position API and writes to DynamoDB
+name: poller
+type: application
+version: 0.1.0

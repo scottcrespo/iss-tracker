@@ -1,0 +1,41 @@
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+jobs:
+  iss-tracker-poller:
+    securityContext: {}
+      # runAsUser: 1000
+      # runAsGroup: 1000
+      # fsGroup: 2000
+    image:
+      repository: 
+      tag: 8104b63eab99a0ee2b938342f302368658930453e87246dbe45c58622808d382
+      imagePullPolicy: IfNotPresent
+    # optional env vars
+    env:
+    - name: DYNAMODB_TABLE
+      value: iss-tracker-positions
+    - name: AWS_DEFAULT_REGION
+      value: us-east-2
+    envFrom: {}
+    schedule: "*/5 * * * *"
+    command: ["python", "poller.py"]
+    args: {}
+    serviceAccount:
+      name: poller
+      annotations:
+        eks.amazonaws.com/role-arn: # inject at helm deploy time
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+    failedJobsHistoryLimit: 1
+    successfulJobsHistoryLimit: 3
+    concurrencyPolicy: Forbid
+    restartPolicy: Never
+    # Because running on fargate, the following components are not necessary
+    nodeSelector: {}
+    tolerations: {}
+    affinity: {}
