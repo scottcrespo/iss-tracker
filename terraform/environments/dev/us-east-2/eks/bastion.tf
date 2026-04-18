@@ -197,6 +197,20 @@ resource "aws_instance" "bastion" {
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
   vpc_security_group_ids = [aws_security_group.bastion.id]
 
+  # Require IMDSv2 — token-based metadata requests only. IMDSv1 allows
+  # unauthenticated HTTP requests to the metadata endpoint, which is
+  # exploitable via SSRF. hop_limit=1 prevents forwarded requests from
+  # reaching the metadata service (containers, proxies).
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
+  root_block_device {
+    encrypted = true
+  }
+
   user_data = <<-EOF
     #!/bin/bash
     set -e

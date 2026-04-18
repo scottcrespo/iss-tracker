@@ -67,6 +67,23 @@ locals {
         Resource = "arn:aws:logs:${local.region}:${local.account_id}:log-group:/${local.name_prefix}/*:*"
       },
       {
+        # Allows application roles provisioned by this operator (e.g. the EKS
+        # cluster role) to use KMS keys. Does not grant key management — only
+        # the encrypt/decrypt/grant operations application workloads need.
+        Sid    = "AllowKMSKeyUsage"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:Encrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey",
+          "kms:CreateGrant",
+          "kms:ListGrants",
+        ]
+        Resource = "arn:aws:kms:${local.region}:${local.account_id}:key/*"
+      },
+      {
         Sid      = "DenyIAM"
         Effect   = "Deny"
         Action   = "iam:*"
@@ -159,6 +176,45 @@ locals {
           "iam:SetDefaultPolicyVersion",
         ]
         Resource = local.boundary_arn
+      },
+      {
+        # CreateKey and listing actions require Resource: "*" — AWS does not
+        # support resource-level restrictions on key creation.
+        Sid    = "AllowKMSKeyCreationAndListing"
+        Effect = "Allow"
+        Action = [
+          "kms:CreateKey",
+          "kms:ListKeys",
+          "kms:ListAliases",
+        ]
+        Resource = "*"
+      },
+      {
+        # Key management scoped to this account. Aliases further scoped to the
+        # project prefix to prevent accidental modification of unrelated keys.
+        Sid    = "AllowKMSKeyManagement"
+        Effect = "Allow"
+        Action = [
+          "kms:DescribeKey",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:ListResourceTags",
+          "kms:PutKeyPolicy",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion",
+          "kms:EnableKeyRotation",
+          "kms:DisableKeyRotation",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:UpdateKeyDescription",
+          "kms:CreateAlias",
+          "kms:UpdateAlias",
+          "kms:DeleteAlias",
+        ]
+        Resource = [
+          "arn:aws:kms:${local.region}:${local.account_id}:key/*",
+          "arn:aws:kms:${local.region}:${local.account_id}:alias/${local.name_prefix}-*",
+        ]
       },
     ]
   })

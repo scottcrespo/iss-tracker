@@ -4,13 +4,13 @@ name: Terraform Dev CI
 # Bootstrap roots are excluded — they require admin credentials and are run manually.
 # See terraform-bootstrap-ci.yml for bootstrap lint/validate coverage.
 #
-# Job structure per root:
-#   lint-and-validate  — always runs on push and PR
-#   plan-{root}        — runs on PR only (needs: lint-and-validate)
-#   apply-{root}       — runs on push to main only (needs: lint-and-validate)
+# Job structure:
+#   lint-and-validate  — terraform fmt check
+#   checkov            — static security analysis (runs in parallel with lint-and-validate)
+#   test-modules       — terraform test for all modules (needs: lint-and-validate)
 #
-# When a new non-bootstrap root is added, add a plan and apply job following
-# the commented template below.
+# Plan and apply jobs are not implemented for this public repository.
+# See the commented template at the bottom of this file for the full design.
 on:
   push:
     paths:
@@ -39,6 +39,37 @@ jobs:
 
       - name: Check formatting
         run: terraform fmt -check -recursive terraform/
+
+  checkov:
+    name: Checkov Security Scan
+    runs-on: ubuntu-latest
+    # Runs in parallel with lint-and-validate — no shared dependencies.
+    # security-events: write is required to upload SARIF results to the
+    # GitHub Security → Code scanning tab.
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkov — Terraform static analysis
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/
+          framework: terraform
+          # Bootstrap roots are excluded — covered by terraform-bootstrap-ci.yml.
+          skip_path: terraform/environments/dev/global/bootstrap
+          # cli writes findings to the job log; sarif feeds GitHub Code Scanning.
+          output_format: cli,sarif
+          output_file_path: console,results.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        # Run even when checkov finds violations so results are always visible.
+        if: always()
+        with:
+          sarif_file: results.sarif
 
   test-modules:
     name: Module Tests
