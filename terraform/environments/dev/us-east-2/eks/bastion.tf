@@ -40,6 +40,7 @@ resource "aws_iam_role" "bastion" {
 
 # EKS read — allows aws eks update-kubeconfig to describe the cluster
 resource "aws_iam_role_policy" "bastion_eks" {
+  #checkov:skip=CKV_AWS_355: ec2:DescribeSecurityGroups does not support resource-level restrictions - AWS requires Resource: "*" for all EC2 Describe actions.
   name = "eks-describe"
   role = aws_iam_role.bastion.name
 
@@ -57,6 +58,12 @@ resource "aws_iam_role_policy" "bastion_eks" {
         Effect   = "Allow"
         Action   = "iam:GetRole"
         Resource = "arn:aws:iam::${local.account_id}:role/${local.cluster_name}-*"
+      },
+      {
+        Sid      = "AllowEC2DescribeSecurityGroups"
+        Effect   = "Allow"
+        Action   = "ec2:DescribeSecurityGroups"
+        Resource = "*"
       }
     ]
   })
