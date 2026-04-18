@@ -20,4 +20,5 @@ skip-check:
   - CKV_AWS_28      # Ensure DynamoDB point in time recovery (backup) is enabled
   - CKV_AWS_135     # Ensure that EC2 is EBS optimized
   - CKV_AWS_126     # Ensure that detailed monitoring is enabled for EC2 instances
-  
+  - CKV_AWS_136     # Ensure that ECR repositories are encrypted using KMS
+

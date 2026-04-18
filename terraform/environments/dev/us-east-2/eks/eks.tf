@@ -152,6 +152,7 @@ resource "aws_security_group_rule" "node_egress_s3" {
 # having both routing AND SG enforce the boundary.
 
 resource "aws_security_group" "fargate_private" {
+  #checkov:skip=CKV2_AWS_5: Attached to iss-tracker pod ENIs via the Kubernetes SecurityGroupPolicy CRD (k8s/iss-tracker/manifests/security-group/sgp-iss-tracker.yaml). The attachment is made by the VPC CNI outside Terraform so Checkov cannot trace the reference.
   name        = "${local.cluster_name}-fargate-private"
   description = "Private Fargate pods (iss-tracker) - internet egress via NAT"
   vpc_id      = module.vpc.vpc_id

@@ -1,6 +1,6 @@
 resource "aws_ecr_repository" "this" {
   name                 = var.repository_name
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   encryption_configuration {
     encryption_type = var.encryption_type
