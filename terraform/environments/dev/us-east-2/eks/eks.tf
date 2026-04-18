@@ -24,6 +24,14 @@ module "eks" {
   endpoint_public_access  = false
   endpoint_private_access = true
 
+  # Envelope encryption for Kubernetes secrets at rest.
+  # The EKS control plane uses this key to encrypt secrets before writing to
+  # etcd and decrypt them on read. Key is defined in kms.tf.
+  encryption_config = {
+    resources        = ["secrets"]
+    provider_key_arn = aws_kms_key.eks_secrets.arn
+  }
+
   # Fargate profiles — define which pods run on Fargate by namespace + label selector.
   # kube-system is included so CoreDNS runs on Fargate (required with no node groups).
   #
