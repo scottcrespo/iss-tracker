@@ -17,7 +17,7 @@ jobs:
     - name: AWS_DEFAULT_REGION
       value: us-east-2
     envFrom: {}
-    schedule: "*/5 * * * *"
+    schedule: "* * * * *"
     command: ["python", "poller.py"]
     args: {}
     serviceAccount:
