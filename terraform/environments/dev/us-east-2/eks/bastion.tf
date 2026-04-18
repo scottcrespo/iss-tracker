@@ -228,6 +228,10 @@ resource "aws_instance" "bastion" {
 
     # configure kubeconfig for the cluster
     aws eks update-kubeconfig --name ${local.cluster_name} --region ${local.region}
+
+    # helm repos
+    helm repo add eks https://aws.github.io/eks-charts
+    helm repo update
   EOF
 
   tags = {
