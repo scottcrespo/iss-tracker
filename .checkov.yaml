@@ -1,0 +1,13 @@
+# Checkov skip configuration
+#
+# Each entry documents a deliberate architectural decision rather than an
+# oversight. Check IDs are verified against actual Checkov output before
+# being added here.
+
+skip-check:
+  # Single NAT gateway — intentional for dev cost control.
+  # A single NAT gateway is a single point of failure; one per AZ is the
+  # correct production configuration. This project uses a single NAT gateway
+  # to minimise cost while the cluster is being developed and torn down frequently.
+  # Check ID: verify from first CI run and replace TODO below.
+  # - TODO_SINGLE_NAT_GATEWAY_CHECK_ID
