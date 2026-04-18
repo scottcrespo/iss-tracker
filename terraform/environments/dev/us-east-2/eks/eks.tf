@@ -1,6 +1,6 @@
 module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "~> 21.18"
+  # commit hash of v21.18.0
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=312ddb68f408ef045a03d3673f5dabeeed5b5cf0"
 
   name               = local.cluster_name
   kubernetes_version = "1.35"

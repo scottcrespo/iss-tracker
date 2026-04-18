@@ -60,9 +60,7 @@ resource "aws_security_group" "vpc_endpoints_private" {
 }
 
 module "vpc_endpoints" {
-  source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
-  version = "6.6.1"
-
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-vpc.git//modules/vpc-endpoints?ref=7a28ce8ec6a17a8ca52710e47763f3a52c155110"
   vpc_id = module.vpc.vpc_id
 
   security_group_ids = [
