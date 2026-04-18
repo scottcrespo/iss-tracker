@@ -8,7 +8,7 @@ jobs:
       # fsGroup: 2000
     image:
       repository:
-      digest: sha256:8104b63eab99a0ee2b938342f302368658930453e87246dbe45c58622808d382
+      tag: latest
       imagePullPolicy: IfNotPresent
     # optional env vars
     env:
