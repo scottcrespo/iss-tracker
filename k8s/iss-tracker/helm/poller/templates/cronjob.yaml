@@ -39,7 +39,13 @@ spec:
           {{- end }}
         {{- end }}
           containers:
+          {{- if and (hasKey $job.image "digest") $job.image.digest }}
+          - image: {{ $job.image.repository }}@{{ $job.image.digest }}
+          {{- else if and (hasKey $job.image "tag") $job.image.tag }}
           - image: {{ $job.image.repository }}:{{ $job.image.tag }}
+          {{- else }}
+          {{- fail "image.digest or image.tag must be set" }}
+          {{- end }}
             imagePullPolicy: {{ $job.image.imagePullPolicy }}
             name: {{ $jobname }}
             {{- with $job.env }}
