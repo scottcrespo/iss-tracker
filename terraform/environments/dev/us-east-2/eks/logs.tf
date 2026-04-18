@@ -48,8 +48,8 @@ resource "aws_iam_role_policy" "flow_logs" {
 }
 
 module "vpc_flow_log" {
-  source  = "terraform-aws-modules/vpc/aws//modules/flow-log"
-  version = "6.6.1"
+  # v6.6.1
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-vpc.git//modules/flow-log?ref=7a28ce8ec6a17a8ca52710e47763f3a52c155110"
 
   vpc_id                                 = module.vpc.vpc_id
   create_iam_role                        = false

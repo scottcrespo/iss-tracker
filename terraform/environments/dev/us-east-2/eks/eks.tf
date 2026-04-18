@@ -1,6 +1,6 @@
 module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "~> 21.18"
+  # commit hash of v21.18.0
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-eks.git?ref=312ddb68f408ef045a03d3673f5dabeeed5b5cf0"
 
   name               = local.cluster_name
   kubernetes_version = "1.35"
@@ -23,6 +23,14 @@ module "eks" {
   # Operators access the cluster via kubectl through the VPC (or a bastion).
   endpoint_public_access  = false
   endpoint_private_access = true
+
+  # Envelope encryption for Kubernetes secrets at rest.
+  # The EKS control plane uses this key to encrypt secrets before writing to
+  # etcd and decrypt them on read. Key is defined in kms.tf.
+  encryption_config = {
+    resources        = ["secrets"]
+    provider_key_arn = aws_kms_key.eks_secrets.arn
+  }
 
   # Fargate profiles — define which pods run on Fargate by namespace + label selector.
   # kube-system is included so CoreDNS runs on Fargate (required with no node groups).
@@ -144,6 +152,7 @@ resource "aws_security_group_rule" "node_egress_s3" {
 # having both routing AND SG enforce the boundary.
 
 resource "aws_security_group" "fargate_private" {
+  #checkov:skip=CKV2_AWS_5: Attached to iss-tracker pod ENIs via the Kubernetes SecurityGroupPolicy CRD (k8s/iss-tracker/manifests/security-group/sgp-iss-tracker.yaml). The attachment is made by the VPC CNI outside Terraform so Checkov cannot trace the reference.
   name        = "${local.cluster_name}-fargate-private"
   description = "Private Fargate pods (iss-tracker) - internet egress via NAT"
   vpc_id      = module.vpc.vpc_id

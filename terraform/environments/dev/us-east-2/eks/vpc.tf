@@ -1,8 +1,8 @@
 module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "6.6.1"
-  name    = local.cluster_name
-  cidr    = local.vpc_cidr
+  # v6.6.1
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-vpc.git?ref=7a28ce8ec6a17a8ca52710e47763f3a52c155110"
+  name   = local.cluster_name
+  cidr   = local.vpc_cidr
 
   azs = ["us-east-2a", "us-east-2b", "us-east-2c"]
 

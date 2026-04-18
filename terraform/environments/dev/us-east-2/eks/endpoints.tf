@@ -16,6 +16,7 @@
 # carry no SG and must be added to both the intra and private route tables.
 
 resource "aws_security_group" "vpc_endpoints_intra" {
+  #checkov:skip=CKV2_AWS_5: Attached to all interface VPC endpoint ENIs via module.vpc_endpoints security_group_ids. The attachment is inside a third-party module so Checkov cannot trace the reference.
   name        = "${local.cluster_name}-vpc-endpoints-intra"
   description = "VPC endpoints - HTTPS from intra subnets (kube-system pods)"
   vpc_id      = module.vpc.vpc_id
@@ -38,6 +39,7 @@ resource "aws_security_group" "vpc_endpoints_intra" {
 }
 
 resource "aws_security_group" "vpc_endpoints_private" {
+  #checkov:skip=CKV2_AWS_5: Attached to all interface VPC endpoint ENIs via module.vpc_endpoints security_group_ids. The attachment is inside a third-party module so Checkov cannot trace the reference.
   name        = "${local.cluster_name}-vpc-endpoints-private"
   description = "VPC endpoints - HTTPS from private subnets (iss-tracker pods)"
   vpc_id      = module.vpc.vpc_id
@@ -60,9 +62,7 @@ resource "aws_security_group" "vpc_endpoints_private" {
 }
 
 module "vpc_endpoints" {
-  source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
-  version = "6.6.1"
-
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-vpc.git//modules/vpc-endpoints?ref=7a28ce8ec6a17a8ca52710e47763f3a52c155110"
   vpc_id = module.vpc.vpc_id
 
   security_group_ids = [

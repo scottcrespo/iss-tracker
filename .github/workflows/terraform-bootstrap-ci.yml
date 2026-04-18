@@ -2,7 +2,7 @@ name: Terraform Bootstrap CI
 
 # Triggers on changes to bootstrap roots only.
 # Bootstrap roots require admin credentials and are never planned/applied in CI —
-# only formatting and validation are checked here.
+# formatting, validation, and static security analysis are the only checks here.
 #
 # Bootstrap roots (run manually with admin credentials):
 #   - terraform/environments/dev/global/bootstrap/s3-tfstate
@@ -67,3 +67,27 @@ jobs:
         run: |
           terraform init -backend=false
           terraform validate
+
+  checkov:
+    name: Checkov Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkov — Bootstrap Terraform static analysis
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/environments/dev/global/bootstrap
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: console,results.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
