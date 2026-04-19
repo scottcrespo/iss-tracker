@@ -27,6 +27,18 @@ module "vpc" {
       to_port     = 65535
       cidr_block  = "0.0.0.0/0"
     },
+    # UDP ephemeral return traffic — CoreDNS responses arrive with dest port in
+    # the ephemeral range (source port 53 on CoreDNS, dest port = pod's query
+    # port). NACLs are stateless so this must be explicit; the TCP rule above
+    # does not cover UDP.
+    {
+      rule_number = 105
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "0.0.0.0/0"
+    },
     # ALB forwarding to API pods
     {
       rule_number = 110
@@ -34,24 +46,6 @@ module "vpc" {
       protocol    = "tcp"
       from_port   = 8000
       to_port     = 8000
-      cidr_block  = local.vpc_cidr
-    },
-    # DNS responses from CoreDNS (UDP)
-    {
-      rule_number = 120
-      rule_action = "allow"
-      protocol    = "udp"
-      from_port   = 53
-      to_port     = 53
-      cidr_block  = local.vpc_cidr
-    },
-    # DNS responses from CoreDNS (TCP fallback)
-    {
-      rule_number = 130
-      rule_action = "allow"
-      protocol    = "tcp"
-      from_port   = 53
-      to_port     = 53
       cidr_block  = local.vpc_cidr
     },
     # ICMP type 3 - Destination Unreachable (Path MTU Discovery)
@@ -162,6 +156,18 @@ module "vpc" {
       to_port     = "53"
       cidr_block  = local.vpc_cidr
     },
+    # UDP ephemeral return traffic — VPC DNS resolver (10.0.0.2) responds to
+    # CoreDNS forwarded queries with UDP from port 53 to CoreDNS's ephemeral
+    # port. NACLs are stateless so this must be explicit; the TCP rule below
+    # does not cover UDP.
+    {
+      rule_number = "125"
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = "1024"
+      to_port     = "65535"
+      cidr_block  = local.vpc_cidr
+    },
     # Ephemeral ports from VPC (return traffic from VPC endpoints)
     {
       rule_number = "130"
@@ -264,11 +270,23 @@ module "vpc" {
       to_port     = 53
       cidr_block  = local.vpc_cidr
     },
-    # Ephemeral return traffic
+    # Ephemeral return traffic (TCP)
     {
       rule_number = 130
       rule_action = "allow"
       protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = local.vpc_cidr
+    },
+    # Ephemeral return traffic (UDP) — required for CoreDNS UDP responses back
+    # to pods in private subnets. DNS queries arrive on UDP 53; responses leave
+    # from port 53 to the client's ephemeral port. NACLs are stateless so this
+    # outbound rule is required even though the inbound query was permitted.
+    {
+      rule_number = 135
+      rule_action = "allow"
+      protocol    = "udp"
       from_port   = 1024
       to_port     = 65535
       cidr_block  = local.vpc_cidr

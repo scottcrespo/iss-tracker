@@ -116,6 +116,7 @@ resource "aws_iam_role_policy" "irsa_api" {
         Sid    = "AllowDynamoDBAccess"
         Effect = "Allow"
         Action = [
+          "dynamodb:DescribeTable",
           "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
@@ -176,6 +177,7 @@ resource "aws_iam_role_policy" "irsa_poller" {
         Sid    = "AllowDynamoDBWrite"
         Effect = "Allow"
         Action = [
+          "dynamodb:DescribeTable",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
         ]

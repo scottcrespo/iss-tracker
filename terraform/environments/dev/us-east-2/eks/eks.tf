@@ -223,25 +223,71 @@ resource "aws_security_group_rule" "fargate_private_egress_http" {
   cidr_blocks       = ["0.0.0.0/0"]
 }
 
-# DNS egress to CoreDNS pods in intra subnets. Kubernetes service discovery
-# (kube-dns clusterIP) resolves to CoreDNS pod IPs (10.0.51.x). The SG is
-# stateful so DNS responses are automatically permitted inbound.
+# DNS egress to CoreDNS via the kube-dns ClusterIP (172.20.0.10) and pod IPs
+# (10.0.51.x). Both CIDRs are needed: the ClusterIP is in the EKS service CIDR
+# (172.20.0.0/16), which is outside vpc_cidr. On Fargate, SG evaluation sees
+# the pre-DNAT destination so the service CIDR must be explicitly allowed.
 resource "aws_security_group_rule" "fargate_private_egress_dns_udp" {
-  description       = "DNS to CoreDNS in intra subnets (UDP)"
+  description       = "DNS to CoreDNS - VPC and service CIDR (UDP)"
   type              = "egress"
   from_port         = 53
   to_port           = 53
   protocol          = "udp"
   security_group_id = aws_security_group.fargate_private.id
-  cidr_blocks       = [local.vpc_cidr]
+  cidr_blocks       = [local.vpc_cidr, "172.20.0.0/16"]
 }
 
 resource "aws_security_group_rule" "fargate_private_egress_dns_tcp" {
-  description       = "DNS to CoreDNS in intra subnets (TCP fallback)"
+  description       = "DNS to CoreDNS - VPC and service CIDR (TCP fallback)"
   type              = "egress"
   from_port         = 53
   to_port           = 53
   protocol          = "tcp"
   security_group_id = aws_security_group.fargate_private.id
-  cidr_blocks       = [local.vpc_cidr]
+  cidr_blocks       = [local.vpc_cidr, "172.20.0.0/16"]
+}
+
+# Allow iss-tracker Fargate pods to reach the EKS cluster API. Required for
+# node registration and kubectl exec/port-forward. The fargate_private SG
+# replaces the node SG on pod ENIs (via SGP), so it needs an explicit entry
+# in the cluster SG just like the bastion and node SG rules above.
+resource "aws_security_group_rule" "cluster_ingress_fargate_private" {
+  description              = "Private Fargate pods to cluster API"
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  security_group_id        = module.eks.cluster_security_group_id
+  source_security_group_id = aws_security_group.fargate_private.id
+}
+
+# ---------------------------------------------------------------------------
+# Cluster SG — DNS ingress from private Fargate pods
+# ---------------------------------------------------------------------------
+#
+# On a Fargate-only cluster, ALL Fargate pods use the cluster SG by default.
+# kube-system pods (CoreDNS) keep the cluster SG. iss-tracker pods have it
+# replaced by fargate_private via SGP. The cluster SG only allows traffic from
+# itself, so DNS queries from fargate_private pods to CoreDNS are REJECTED.
+# These rules open UDP/TCP 53 on the cluster SG so CoreDNS can receive queries
+# from iss-tracker pods.
+
+resource "aws_security_group_rule" "cluster_ingress_fargate_private_dns_udp" {
+  description              = "DNS from private Fargate pods to CoreDNS (UDP)"
+  type                     = "ingress"
+  from_port                = 53
+  to_port                  = 53
+  protocol                 = "udp"
+  security_group_id        = module.eks.cluster_security_group_id
+  source_security_group_id = aws_security_group.fargate_private.id
+}
+
+resource "aws_security_group_rule" "cluster_ingress_fargate_private_dns_tcp" {
+  description              = "DNS from private Fargate pods to CoreDNS (TCP fallback)"
+  type                     = "ingress"
+  from_port                = 53
+  to_port                  = 53
+  protocol                 = "tcp"
+  security_group_id        = module.eks.cluster_security_group_id
+  source_security_group_id = aws_security_group.fargate_private.id
 }
