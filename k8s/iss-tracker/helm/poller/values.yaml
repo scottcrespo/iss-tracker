@@ -16,6 +16,8 @@ jobs:
       value: iss-tracker-positions
     - name: AWS_DEFAULT_REGION
       value: us-east-2
+    - name: ISS_TRACK_URL
+      value: https://api.wheretheiss.at/v1/satellites/25544
     envFrom: {}
     schedule: "* * * * *"
     command: ["python", "poller.py"]
