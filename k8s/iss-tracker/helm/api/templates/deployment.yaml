@@ -46,6 +46,10 @@ spec:
           {{- fail "image.digest or image.tag must be set" }}
           {{- end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

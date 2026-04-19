@@ -49,6 +49,12 @@ securityContext: {}
   # runAsNonRoot: true
   # runAsUser: 1000
 
+env:
+- name: DYNAMODB_TABLE
+  value: iss-tracker-positions
+- name: AWS_DEFAULT_REGION
+  value: us-east-2
+
 service:
   type: ClusterIP
   port: 8000
