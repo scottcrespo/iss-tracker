@@ -30,6 +30,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 TABLE = None
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 def init_db(table_name: str, endpoint_url: str) -> object:
     """
     Creates a boto3 DynamoDB resource and returns a reference to the specified

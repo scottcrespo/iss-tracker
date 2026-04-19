@@ -16,6 +16,8 @@ name: Terraform Bootstrap CI
 # existing pattern. Do NOT add plan or apply jobs to this file.
 on:
   push:
+    branches-ignore:
+      - "DEBUG/**"
     paths:
       - "terraform/environments/dev/global/bootstrap/**"
   pull_request:

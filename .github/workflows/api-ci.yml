@@ -2,6 +2,8 @@ name: API CI
 
 on:
   push:
+    branches-ignore:
+      - "DEBUG/**"
     paths:
       - "apps/api/**"
   pull_request:
