@@ -2,6 +2,8 @@ name: Poller CI
 
 on:
   push:
+    branches-ignore:
+      - "DEBUG/**"
     paths:
       - "apps/poller/**"
   pull_request:

@@ -13,6 +13,8 @@ name: Terraform Dev CI
 # See the commented template at the bottom of this file for the full design.
 on:
   push:
+    branches-ignore:
+      - "DEBUG/**"
     paths:
       - "terraform/**"
       - "!terraform/environments/dev/global/bootstrap/**"
