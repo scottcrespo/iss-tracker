@@ -13,10 +13,9 @@ usage() {
 [[ $# -ne 1 ]] && usage
 
 inject_values() {
-  local account_id region registry role_arn
+  local account_id registry role_arn
   account_id=$(aws sts get-caller-identity --query Account --output text)
-  region=$(aws configure get region)
-  registry="${account_id}.dkr.ecr.${region}.amazonaws.com"
+  registry="${account_id}.dkr.ecr.us-east-2.amazonaws.com"
   role_arn=$(aws iam get-role --role-name iss-tracker-eks-poller --query Role.Arn --output text)
 
   echo "  image.repository : ${registry}/iss-tracker-poller"

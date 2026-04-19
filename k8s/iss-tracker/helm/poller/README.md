@@ -31,9 +31,8 @@ cd k8s/iss-tracker/helm/poller
 
 The script:
 1. Resolves the AWS account ID via `aws sts get-caller-identity`
-2. Resolves the AWS region via `aws configure get region`
-3. Looks up the IRSA role ARN via `aws iam get-role`
-4. Passes all three as `--set` overrides at install/upgrade time so they never appear in `values.yaml` or version control
+2. Looks up the IRSA role ARN via `aws iam get-role`
+3. Passes both as `--set` overrides at install/upgrade time so they never appear in `values.yaml` or version control
 
 ## Configuration
 
