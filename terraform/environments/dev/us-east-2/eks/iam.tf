@@ -116,6 +116,7 @@ resource "aws_iam_role_policy" "irsa_api" {
         Sid    = "AllowDynamoDBAccess"
         Effect = "Allow"
         Action = [
+          "dynamodb:DescribeTable",
           "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
@@ -176,6 +177,7 @@ resource "aws_iam_role_policy" "irsa_poller" {
         Sid    = "AllowDynamoDBWrite"
         Effect = "Allow"
         Action = [
+          "dynamodb:DescribeTable",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
         ]
@@ -274,6 +276,7 @@ resource "aws_iam_role_policy" "lb_controller" {
           "elasticloadbalancing:DescribeTargetHealth",
           "elasticloadbalancing:DescribeTags",
           "elasticloadbalancing:DescribeTrustStores",
+          "elasticloadbalancing:DescribeListenerAttributes",
         ]
         Resource = "*"
       },
@@ -379,6 +382,24 @@ resource "aws_iam_role_policy" "lb_controller" {
           "elasticloadbalancing:DeleteRule",
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "AllowELBTagsOnCreate"
+        Effect = "Allow"
+        Action = ["elasticloadbalancing:AddTags"]
+        Resource = [
+          "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*",
+          "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*",
+          "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*",
+        ]
+        Condition = {
+          StringEquals = {
+            "elasticloadbalancing:CreateAction" = ["CreateTargetGroup", "CreateLoadBalancer"]
+          }
+          Null = {
+            "aws:RequestTag/elbv2.k8s.aws/cluster" = "false"
+          }
+        }
       },
       {
         Sid    = "AllowELBTagManagement"

@@ -17,6 +17,11 @@ def reset_mock():
     mock_table.reset_mock()
     yield
 
+def test_health_200():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
 def test_read_position_200():
     """
     GET /position returns 200 and the most recent position item when data exists.
