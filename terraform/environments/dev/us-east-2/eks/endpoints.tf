@@ -120,5 +120,21 @@ module "vpc_endpoints" {
       subnet_ids          = module.vpc.intra_subnets
       private_dns_enabled = true
     }
+    # Elastic Load Balancing — required by the AWS Load Balancer Controller
+    # (runs in intra subnets) to create and manage ALBs via the ELB v2 API
+    elasticloadbalancing = {
+      service             = "elasticloadbalancing"
+      service_type        = "Interface"
+      subnet_ids          = module.vpc.intra_subnets
+      private_dns_enabled = true
+    }
+    # EC2 — required by the AWS Load Balancer Controller for subnet auto-discovery
+    # and security group management (DescribeSubnets, DescribeSecurityGroups, etc.)
+    ec2 = {
+      service             = "ec2"
+      service_type        = "Interface"
+      subnet_ids          = module.vpc.intra_subnets
+      private_dns_enabled = true
+    }
   }
 }
