@@ -179,6 +179,12 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 - [x] FastAPI application with `/position` and `/positions` endpoints
 - [x] Docker images built and pushed to private ECR
 
+**Kubernetes — complete**
+- [x] Helm chart for API Deployment + Ingress (ALB)
+- [x] Helm chart for Poller CronJob
+- [x] Kubernetes namespace and service account provisioning
+- [x] End-to-end smoke test (poller writes, API reads)
+
 **CI/CD — complete**
 - [x] GitHub Actions workflows for bootstrap, app, and environment infrastructure
 - [x] OIDC-based authentication (no stored AWS credentials)
@@ -186,13 +192,10 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 
 ## To Do
 
-- [ ] Helm chart for API Deployment + Ingress (ALB)
-- [ ] Helm chart for Poller CronJob
-- [ ] Kubernetes namespace and service account provisioning
-- [ ] End-to-end smoke test (poller writes, API reads)
+- [ ] ArgoCD — GitOps-based delivery for api and poller workloads; External Secrets Operator for secrets management; no CI cluster access, no secrets in Git
+- [ ] Kubernetes container security hardening — RBAC, ServiceAccount policies, SecurityContext (`runAsNonRoot`, `readOnlyRootFilesystem`, drop capabilities)
 - [ ] Prometheus + Pushgateway for poller heartbeat metrics
 - [ ] Grafana dashboard
-- [ ] CI pipeline for Helm chart deployment
 
 ---
 

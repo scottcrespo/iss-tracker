@@ -114,6 +114,36 @@ Specifically:
 
 This maintains the security ownership principle established in the IAM module design: the operator controls what entities can do, not just that they exist.
 
+## Terraform / Kubernetes Provisioning Coupling
+
+A consequence of the Fargate + least-privilege SG design is that the EKS root
+module carries responsibilities that would normally live outside
+infrastructure-as-code — specifically Kubernetes namespace topology and
+per-workload network policy.
+
+Two mechanisms drive this coupling:
+
+1. **Fargate profiles** must be provisioned in AWS before pods can schedule in
+   a given namespace. This forces a `terraform apply` as a prerequisite for any
+   new workload or cluster addon, and prevents a GitOps tool from fully
+   bootstrapping itself from cold start.
+
+2. **Per-namespace security groups** — our choice to replace the default shared
+   cluster SG with scoped SGs via `SecurityGroupPolicy` means every new
+   namespace with distinct network requirements produces work in two places: a
+   new `aws_security_group` in terraform and a new `SecurityGroupPolicy`
+   manifest in Kubernetes. The two resources are tightly coupled — the manifest
+   references the SG ID produced by terraform.
+
+This is an accepted trade-off. The alternatives (accepting the default shared
+cluster SG, or using managed node groups) each sacrifice more than they gain for
+this project's goals. The coupling is manageable at the current namespace count
+and is explicit rather than hidden.
+
+For a fuller discussion of the root causes, mitigations, and scaling
+considerations, see:
+[docs/lessons-learned/terraform-k8s-coupling.md](../lessons-learned/terraform-k8s-coupling.md)
+
 ## Pre-built vs DIY module split
 
 | Component | Approach | Rationale |
