@@ -211,3 +211,6 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 | [API application](apps/api/) | FastAPI, DynamoDB access patterns, dependency injection |
 | [Poller application](apps/poller/) | CronJob pattern, retry logic, Pushgateway metrics |
 | [Bootstrap Terraform](terraform/environments/dev/global/bootstrap/) | IAM chicken-and-egg solution, OIDC provider provisioning |
+| [AI context documents](docs/context/) | Structured context docs (AWS, Terraform, K8s, security, CI/CD) following Anthropic Claude Code guidelines; patterns, anti-patterns, and governance rules per domain |
+| [CLAUDE.md](CLAUDE.md) | Project-level AI assistant rulebook — hard constraints, repo navigation, methodology, and domain context pointers |
+| [Lessons learned](docs/lessons-learned/) | Debugging post-mortems: private EKS networking, Fargate SG architecture, Terraform/K8s coupling |
