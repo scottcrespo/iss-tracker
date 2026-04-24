@@ -22,7 +22,7 @@ constraints documented below.
 |-----------|----------------------|-----------------|
 | `kube-system` | Intra subnets | None — VPC endpoints only |
 | `iss-tracker` | Private subnets | Yes — via NAT gateway |
-| `argocd` (planned) | Private subnets | Yes — required for Git access |
+| `argocd` | Private subnets | Yes — required for Git access |
 
 Each Fargate profile explicitly pins `subnet_ids` to its tier. Without explicit
 pinning, EKS schedules pods across all cluster subnets, mixing tiers.
@@ -45,11 +45,45 @@ Two-part requirement for every new namespace with distinct network needs:
 
 - Use `helmwrap.sh` — never call `helm` directly. The wrapper injects sensitive
   values (ECR repo URL, IRSA role ARN) that must not be stored in `values.yaml`
-- `image.digest` (SHA256) is the preferred image reference over `image.tag` —
-  digest references are immutable
+- All images launched by a chart must be declared explicitly in `values.yaml`
+  regardless of whether the component is enabled:
+  - **Enabled components** — image tag must include a resolved SHA256 digest
+    in `tag: "<version>@sha256:<digest>"` format. Kubernetes enforces the digest;
+    the tag is retained for human readability only.
+  - **Disabled components** — image tag must use the placeholder
+    `"<version>@sha256:REPLACE_WITH_DIGEST"`. This is intentional soft policy
+    enforcement: if an operator enables the component without resolving the digest,
+    the deploy will fail, prompting them to pin before shipping.
+  - Resolve digests with:
+    `docker pull <image>:<tag> && docker inspect --format='{{index .RepoDigests 0}}' <image>:<tag>`
 - Sensitive Helm parameters are never stored in `values.yaml` or committed to Git
 - Chart structure follows the standard `helm create` scaffold; deviations are
   documented in the chart's `README.md`
+
+**Explicit values for security-relevant and scheduling-relevant settings.**
+Third-party charts (ArgoCD, ESO, LB controller) must have the following categories
+set explicitly in `values.yaml`, even when accepting chart defaults. The goal is
+visibility — hardening is a value edit, not a structural change:
+
+1. **Pod identity and token handling** — `serviceAccount.create`, `name`,
+   `annotations`, `automountServiceAccountToken` per component. Prevents implicit
+   SA creation and documents token mount decisions.
+
+2. **Security context** — both pod-level (`securityContext`: `runAsNonRoot`,
+   `runAsUser`, `runAsGroup`, `fsGroup`, `seccompProfile`) and container-level
+   (`containerSecurityContext`: `readOnlyRootFilesystem`, `allowPrivilegeEscalation`,
+   `capabilities.drop`, `runAsNonRoot`, `seccompProfile`). Set globally where the
+   chart supports it; override per component where needed.
+
+3. **Scheduling** — `nodeSelector`, `tolerations`, `affinity`,
+   `topologySpreadConstraints`, `priorityClassName` per component. On Fargate
+   these have no effect, but explicit empty values document the decision and keep
+   the structure in place for mixed-mode clusters.
+
+4. **Networking and ingress** — `service.type`, `ingress.enabled`, `networkPolicy`
+   (scaffolded disabled where not yet hardened). No service should be implicitly
+   exposed. `networkPolicy.create: false` is acceptable during functional baseline;
+   flip to `true` during secure baseline iteration.
 
 ---
 
