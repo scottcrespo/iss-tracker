@@ -30,6 +30,6 @@ output "cluster_name" {
 }
 
 output "cluster_security_group_id" {
-  description = "EKS cluster security group ID. Consumed by the bastion root to add a TCP/443 ingress rule sourced from the bastion SG."
-  value       = module.eks.cluster_security_group_id
+  description = "EKS primary (EKS-managed) cluster SG ID. Consumed by the bastion root to add a TCP/443 ingress rule sourced from the bastion SG. Uses the primary SG because the EKS control plane uses this SG for all connections to pods and to accept inbound API traffic."
+  value       = local.eks_primary_sg_id
 }

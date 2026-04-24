@@ -31,7 +31,7 @@ resource "aws_security_group_rule" "iss_tracker_ingress_cluster" {
   to_port                  = 0
   protocol                 = "-1"
   security_group_id        = aws_security_group.iss_tracker.id
-  source_security_group_id = module.eks.cluster_security_group_id
+  source_security_group_id = local.eks_primary_sg_id
 }
 
 # ALB → pod: the load balancer forwards requests to the API pod on port 8000.

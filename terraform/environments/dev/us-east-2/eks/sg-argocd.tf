@@ -27,7 +27,7 @@ resource "aws_security_group_rule" "argocd_ingress_cluster" {
   to_port                  = 0
   protocol                 = "-1"
   security_group_id        = aws_security_group.argocd.id
-  source_security_group_id = module.eks.cluster_security_group_id
+  source_security_group_id = local.eks_primary_sg_id
 }
 
 # Intra-component traffic: argocd-server, argocd-repo-server, argocd-application-
