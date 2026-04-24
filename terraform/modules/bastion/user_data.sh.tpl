@@ -31,6 +31,10 @@ chmod +x /usr/local/bin/kubectl
 
 curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
+curl -sSL -o /usr/local/bin/argocd \
+  https://github.com/argoproj/argo-cd/releases/download/v2.13.8/argocd-linux-amd64
+chmod +x /usr/local/bin/argocd
+
 # ---------------------------------------------------------------------------
 # Per-user bootstrap (runs as ec2-user so ownership lands under the
 # operator's home directory rather than root's).

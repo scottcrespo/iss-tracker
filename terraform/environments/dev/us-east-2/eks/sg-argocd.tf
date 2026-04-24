@@ -91,3 +91,19 @@ resource "aws_security_group_rule" "argocd_egress_self" {
   security_group_id        = aws_security_group.argocd.id
   source_security_group_id = aws_security_group.argocd.id
 }
+
+# Service CIDR egress: Fargate SG evaluation sees the pre-DNAT destination, so
+# traffic to ClusterIPs (172.20.0.0/16) is evaluated against the service IP
+# before iptables rewrites it to a pod IP. The self-referencing rule above does
+# not match ClusterIP destinations. All argocd inter-component communication
+# (Redis on 6379, repo-server gRPC on 8081, etc.) routes through ClusterIPs and
+# requires this explicit rule.
+resource "aws_security_group_rule" "argocd_egress_service_cidr" {
+  description       = "Egress to cluster service CIDR for intra-component ClusterIP traffic"
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  security_group_id = aws_security_group.argocd.id
+  cidr_blocks       = ["172.20.0.0/16"]
+}

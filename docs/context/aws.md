@@ -75,6 +75,10 @@ Rules that apply to all IAM resources provisioned by this project:
 - **No `aws configure` in scripts.** `aws configure get region` exits code 1
   when region is set via environment variable, silently killing scripts that use
   `set -e`. Hardcode `us-east-2` instead
+- **No `vpc_cidr` in intra-tier NACL rules.** The VPC CIDR spans all subnet
+  tiers including public. NACL rules between intra and private tiers must be
+  scoped to the private subnet CIDRs only — never the full VPC CIDR. See
+  `docs/lessons-learned/private-eks-fargate-debugging.md` section 8.
 
 ---
 

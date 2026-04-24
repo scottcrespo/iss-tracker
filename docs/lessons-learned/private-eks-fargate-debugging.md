@@ -222,6 +222,103 @@ terraform import aws_security_group_rule.<name> <sg-id>_ingress_...
 
 ---
 
+## 7. aws_security_group_rule Multi-CIDR Anti-Pattern
+
+### What happened
+During a cluster SG refactor, `aws_security_group_rule` resources were written
+with a list of CIDRs in `cidr_blocks`:
+
+```hcl
+resource "aws_security_group_rule" "cluster_ingress_dns_udp" {
+  cidr_blocks = module.vpc.private_subnets_cidr_blocks  # list of 3 CIDRs
+  ...
+}
+```
+
+AWS creates one rule per CIDR in the list, but terraform tracks them as a single
+resource. After a `terraform state rm` + manual CLI add + config rewrite cycle,
+`terraform apply` reported `InvalidPermission.Duplicate` for all rules — terraform
+tried to create rules that already existed, but state didn't know about them.
+
+### The two-SG-ID trap
+Debugging was complicated by a second issue: EKS exposes two different security
+group IDs and it is easy to describe the wrong one.
+
+| Source | SG ID | What it is |
+|--------|-------|------------|
+| `aws eks describe-cluster ... .clusterSecurityGroupId` | `sg-090f...` | EKS-managed control plane SG |
+| `terraform output cluster_security_group_id` | `sg-004c...` | terraform-aws-modules cluster SG — what Fargate pods and sg-cluster.tf actually use |
+
+We were running `describe-security-group-rules` against the EKS-managed SG and
+seeing no per-subnet rules, while terraform was correctly targeting the module SG
+where the rules already existed. The contradiction ("rules don't exist" from
+describe, "duplicate" from apply) was caused entirely by describing the wrong SG.
+
+### Fix
+1. Always verify the SG ID terraform is targeting with `terraform output cluster_security_group_id` before inspecting rules with the AWS CLI.
+2. Use `for_each` over a set of CIDRs — one resource per CIDR, clean state:
+
+```hcl
+resource "aws_security_group_rule" "cluster_ingress_private_subnets_dns_udp" {
+  for_each = toset(module.vpc.private_subnets_cidr_blocks)
+
+  cidr_blocks       = [each.value]
+  security_group_id = module.eks.cluster_security_group_id
+  ...
+}
+```
+
+3. Import the existing AWS rules into the new `for_each` resources:
+
+```bash
+# Import format: SGID_TYPE_PROTOCOL_FROMPORT_TOPORT_CIDR
+terraform import \
+  'aws_security_group_rule.cluster_ingress_private_subnets_dns_udp["10.0.1.0/24"]' \
+  sg-004c62e65be079f87_ingress_udp_53_53_10.0.1.0/24
+```
+
+### Rule of thumb
+Never use a list in `cidr_blocks` on `aws_security_group_rule`. Each CIDR must
+be its own resource (via `for_each`) so terraform can track, import, and reconcile
+each AWS rule independently.
+
+---
+
+## 8. NACL Rules: Scope to Subnet Tiers, Not the Full VPC CIDR
+
+### What happened
+When opening DNS (UDP/TCP 53) across the intra ↔ private subnet boundary, the
+proposed NACL rule used `vpc_cidr` (e.g., `10.0.0.0/16`) as the source/destination.
+This was flagged as too permissive: the VPC CIDR includes public subnets, which
+should have no direct path into the intra tier where kube-system workloads run.
+
+### Why vpc_cidr is wrong for intra-tier NACLs
+NACLs are the last stateless enforcement layer before routing. Allowing the full
+`vpc_cidr` on intra subnet NACLs grants implicit access from public subnets,
+undermining the defense-in-depth model where each tier has distinct trust. A
+misconfigured public-facing resource (e.g., a future ALB misroute) would then
+have a NACL-permitted path into the cluster control plane tier.
+
+### The right scope
+NACL rules between tiers should be scoped to the specific subnet CIDRs that
+legitimately need to communicate:
+
+| Traffic | NACL source/destination |
+|---------|------------------------|
+| Private pods → intra CoreDNS (53) | private subnet CIDRs only |
+| Intra CoreDNS responses → private pods (ephemeral) | private subnet CIDRs only |
+| Private pods → intra VPC endpoints (443) | private subnet CIDRs only |
+
+**Never use `vpc_cidr` for intra-tier NACL rules.** Enumerate the private subnet
+CIDRs explicitly, or use a dedicated local that represents only the private tier.
+
+### Rule of thumb
+When writing a NACL rule, ask: which subnet tier actually originates this traffic?
+Scope the rule to that tier's CIDRs. If the answer is "anything in the VPC," that
+is a signal to re-examine the architecture, not a justification for a broad rule.
+
+---
+
 ## Summary
 
 Private EKS clusters with Fargate and no NAT are significantly more operationally
@@ -230,3 +327,8 @@ controller must route through a VPC endpoint. SG and NACL rules must be reasoned
 about explicitly because there is no node-level NAT to absorb mistakes. The
 payoff is a cluster with no internet egress and a very small blast radius — but
 expect to spend meaningful time on initial setup.
+
+Two terraform anti-patterns compound the complexity: using `cidr_blocks` lists
+in `aws_security_group_rule` (breaks state tracking) and inspecting the wrong
+SG ID when debugging (EKS exposes two; terraform uses the module-managed one).
+Both are documented in sections 6 and 7 above.

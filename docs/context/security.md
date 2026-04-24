@@ -105,3 +105,9 @@ Runtime-level controls layered on top: source and container image scanning,
   Helm values — use projected IRSA tokens or External Secrets Operator
 - **Never expose the Kubernetes API server publicly** — EKS endpoint is
   private-only; all kubectl access is via bastion
+- **Never use `vpc_cidr` in intra-tier NACL rules** — the VPC CIDR includes
+  public subnets, which must not have a NACL-permitted path into the intra tier.
+  Scope NACL rules to the specific subnet-tier CIDRs that legitimately originate
+  the traffic (e.g., private subnet CIDRs for private → intra DNS). Using the
+  full VPC CIDR defeats the defense-in-depth model where each subnet tier has
+  distinct trust boundaries.

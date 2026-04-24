@@ -1,45 +1,56 @@
 # ---------------------------------------------------------------------------
-# Cluster SG — namespace-agnostic ingress rules
+# EKS primary (EKS-managed) SG — ingress from private subnet pods
 # ---------------------------------------------------------------------------
 #
-# The cluster SG is owned by the EKS module and governs traffic to CoreDNS
-# and the EKS API server. By default it allows only intra-member traffic
-# (cluster SG → cluster SG), which covers kube-system pods but excludes pods
-# assigned a namespace SG via SecurityGroupPolicy.
+# EKS assigns the primary SG (eks-cluster-sg-*) to all Fargate pods that have
+# no SecurityGroupPolicy, including CoreDNS in kube-system. This is distinct
+# from module.eks.cluster_security_group_id, which is an additional SG created
+# by the terraform-aws-modules/eks module and is NOT used by CoreDNS or other
+# kube-system pods.
 #
-# Rather than adding one rule per namespace SG, ingress is opened from the
-# private subnet CIDR — the subnet tier used by all SGP-assigned namespaces
-# (iss-tracker, argocd, and any future private namespace). The private subnets
-# are cluster-dedicated; no non-Kubernetes workloads run there, so this
-# provides equivalent security to per-namespace SG rules with no per-namespace
-# maintenance burden.
+# The primary SG ID is not exposed as a module output and must be read back via
+# the aws_eks_cluster data source in main.tf as local.eks_primary_sg_id.
+#
+# Ingress is opened from each private subnet CIDR individually using for_each
+# so each AWS rule maps to exactly one Terraform resource — avoids the
+# multi-CIDR list issue with aws_security_group_rule and keeps state clean.
+#
+# Two rule sets are required:
+#   - DNS (UDP + TCP 53): private subnet pods → CoreDNS
+#   - API (TCP 443): private subnet pods → EKS API server
 
-resource "aws_security_group_rule" "cluster_ingress_private_subnets_api" {
-  description       = "Private subnet pods to cluster API"
-  type              = "ingress"
-  from_port         = 443
-  to_port           = 443
-  protocol          = "tcp"
-  security_group_id = module.eks.cluster_security_group_id
-  cidr_blocks       = module.vpc.private_subnets_cidr_blocks
-}
+resource "aws_security_group_rule" "primary_sg_ingress_private_subnets_dns_udp" {
+  for_each = toset(module.vpc.private_subnets_cidr_blocks)
 
-resource "aws_security_group_rule" "cluster_ingress_private_subnets_dns_udp" {
-  description       = "DNS from private subnet pods to CoreDNS (UDP)"
+  description       = "DNS from private subnet pods to CoreDNS (UDP) - ${each.value}"
   type              = "ingress"
   from_port         = 53
   to_port           = 53
   protocol          = "udp"
-  security_group_id = module.eks.cluster_security_group_id
-  cidr_blocks       = module.vpc.private_subnets_cidr_blocks
+  security_group_id = local.eks_primary_sg_id
+  cidr_blocks       = [each.value]
 }
 
-resource "aws_security_group_rule" "cluster_ingress_private_subnets_dns_tcp" {
-  description       = "DNS from private subnet pods to CoreDNS (TCP fallback)"
+resource "aws_security_group_rule" "primary_sg_ingress_private_subnets_dns_tcp" {
+  for_each = toset(module.vpc.private_subnets_cidr_blocks)
+
+  description       = "DNS from private subnet pods to CoreDNS (TCP fallback) - ${each.value}"
   type              = "ingress"
   from_port         = 53
   to_port           = 53
   protocol          = "tcp"
-  security_group_id = module.eks.cluster_security_group_id
-  cidr_blocks       = module.vpc.private_subnets_cidr_blocks
+  security_group_id = local.eks_primary_sg_id
+  cidr_blocks       = [each.value]
+}
+
+resource "aws_security_group_rule" "primary_sg_ingress_private_subnets_api" {
+  for_each = toset(module.vpc.private_subnets_cidr_blocks)
+
+  description       = "Private subnet pods to EKS API server - ${each.value}"
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  security_group_id = local.eks_primary_sg_id
+  cidr_blocks       = [each.value]
 }
