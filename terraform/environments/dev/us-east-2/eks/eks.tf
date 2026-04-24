@@ -64,6 +64,13 @@ module "eks" {
         { namespace = "iss-tracker" }
       ]
     }
+    argocd = {
+      iam_role_arn = aws_iam_role.eks_fargate.arn
+      subnet_ids   = module.vpc.private_subnets
+      selectors = [
+        { namespace = "argocd" }
+      ]
+    }
   }
 
   # Additional cluster security group rules — injected rather than hardcoded in module
