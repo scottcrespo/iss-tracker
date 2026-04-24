@@ -1,6 +1,11 @@
-output "fargate_private_sg_id" {
-  description = "SG ID to inject into k8s/sgp-iss-tracker.yaml SecurityGroupPolicy"
-  value       = aws_security_group.fargate_private.id
+output "iss_tracker_sg_id" {
+  description = "SG ID to inject into k8s/iss-tracker/manifests/bootstrap/sgp-iss-tracker.yaml"
+  value       = aws_security_group.iss_tracker.id
+}
+
+output "argocd_sg_id" {
+  description = "SG ID to inject into k8s/argocd/manifests/bootstrap/sgp-argocd.yaml"
+  value       = aws_security_group.argocd.id
 }
 
 # ---------------------------------------------------------------------------
