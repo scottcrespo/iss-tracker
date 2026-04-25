@@ -4,6 +4,24 @@ A full-stack cloud-native application that tracks the real-time position of the 
 
 ---
 
+## Contents
+
+- [Purpose](#purpose)
+- [System Overview](#system-overview)
+- [Technology Stack](#technology-stack)
+- [Design Principles](#design-principles)
+- [Architecture](#architecture)
+  - [VPC Layout](#vpc-layout)
+  - [VPC Endpoints](#vpc-endpoints)
+  - [IAM / IRSA](#iam--irsa)
+  - [CI/CD](#cicd)
+- [Repository Structure](#repository-structure)
+- [Current State](#current-state)
+- [To Do](#to-do)
+- [Key Portfolio Elements](#key-portfolio-elements)
+
+---
+
 ## Purpose
 
 This project exists to demonstrate end-to-end platform engineering skills in a realistic context — not just "infrastructure that works" but infrastructure designed with the same principles applied in production environments: security boundaries, least-privilege IAM, private networking, GitOps workflows, and documented architectural decisions.
@@ -35,8 +53,11 @@ Both applications run as containers on EKS Fargate inside a private VPC. All AWS
 | Load Balancing | AWS Application Load Balancer (via AWS LB Controller) |
 | Applications | Python 3.12 (FastAPI, boto3, httpx) |
 | CI/CD | GitHub Actions with OIDC authentication |
+| GitOps | ArgoCD (automated sync from Git, no CI cluster access) |
+| Secrets Management | AWS Secrets Manager + External Secrets Operator (ESO) |
 | Helm | Helm v3 |
-| Secret Management | ARN injection at deploy time (no secrets in repo) |
+| Container Security Scanning | Trivy |
+| Infrastructure Security Scanning | Checkov, tfsec |
 
 ---
 
@@ -44,7 +65,7 @@ Both applications run as containers on EKS Fargate inside a private VPC. All AWS
 
 **Least-privilege IAM throughout.** Every IAM role is scoped to the minimum permissions required. IRSA (IAM Roles for Service Accounts) binds Kubernetes service accounts to IAM roles using OIDC federation, scoped with `StringEquals` conditions to exact namespace and service account name. CI/CD roles separate plan and apply permissions.
 
-**No secrets in the repository.** Account IDs, role ARNs, and other sensitive values are injected at deploy time using AWS CLI lookups. The repository is safe to be public.
+**No secrets in the repository.** Account IDs, role ARNs, ECR URLs, and credentials are never committed. Sensitive values are stored in AWS Secrets Manager and surfaced into the cluster by External Secrets Operator. The repository is safe to be public.
 
 **Private networking by default.** EKS nodes and Fargate kube-system namespace pods run in intra subnets with no NAT gateway and no internet route. Fargate iss-tracker namespace pods run in private subnet with internet egress route via NAT gateway. All AWS service communication uses VPC endpoints. For resources deployed into intra subnets (as feasible), the absence of an internet route is the primary security control — it makes permissive-looking NACL rules safe in practice.
 
@@ -52,7 +73,7 @@ Both applications run as containers on EKS Fargate inside a private VPC. All AWS
 
 **Decisions are documented.** Every non-obvious architectural choice has a corresponding decision document explaining the tradeoff, the alternatives considered, and why the chosen approach is correct for this context. See [docs/decisions/](docs/decisions/).
 
-**CI/CD is designed but not wired to live infrastructure.** GitHub Actions logs on public repositories are publicly visible. Terraform, the AWS provider, and third-party actions can all emit AWS account IDs, ARNs, and other sensitive values in log output — from state reads, error messages, and provider debug traces — regardless of stdout suppression attempts. Connecting CI/CD pipelines to a live AWS account from a public repository cannot be made safe without private runners or a private repository. The full CI/CD architecture is implemented and documented: OIDC federation, separate plan/apply roles, manual approval gates, and Terraform plan artifact passing. It is production-ready in design; it is simply not connected to a live account from a public repo. See [CI/CD design decisions](docs/decisions/cicd/cicd.md).
+**CI is implemented but not wired to live infrastructure; CD is live via ArgoCD.** The continuous delivery side is fully operational: ArgoCD runs inside the cluster and polls this repository, automatically syncing changes to `develop` into the cluster without any cluster credentials living in GitHub. The continuous integration side (GitHub Actions → AWS) is a deliberate architectural choice, not an omission. Public repository workflow logs are publicly visible, and AWS tooling can emit account IDs, ARNs, and other sensitive values regardless of suppression attempts. The full CI architecture is implemented in Terraform and documented — OIDC federation, separate plan/apply roles, permission boundaries — and is production-ready in design. It is simply not connected to a live account from a public repo. See [CI/CD design decisions](docs/decisions/cicd/cicd.md).
 
 **Infrastructure is reproducible and disposable.** The cluster is designed to be created and destroyed with a single `terraform apply` / `terraform destroy`. This keeps costs low and validates that nothing depends on manual state.
 
@@ -99,11 +120,13 @@ All AWS service traffic is routed through VPC endpoints. Interface endpoint ENIs
 | Endpoint | Type | Purpose |
 |----------|------|---------|
 | `ecr.api` / `ecr.dkr` | Interface | Container image pulls |
-| `s3` | Gateway | ECR layer storage |
-| `dynamodb` | Gateway | Application data |
-| `sts` | Interface | IRSA token exchange |
+| `s3` | Gateway | ECR image layer storage |
+| `dynamodb` | Gateway | Application data (API and poller) |
+| `sts` | Interface | IRSA token exchange (all workloads) |
 | `logs` | Interface | CloudWatch log delivery |
-| `eks` | Interface | Cluster API |
+| `eks` | Interface | Cluster API communication |
+| `elasticloadbalancing` | Interface | ALB/NLB management (LB controller) |
+| `ec2` | Interface | Subnet and SG discovery (LB controller) |
 
 ### IAM / IRSA
 
@@ -114,11 +137,15 @@ Each workload has a dedicated IAM role scoped to its minimum required permission
 | `iss-tracker-eks-api` | DynamoDB read/write on `iss-tracker-*` tables |
 | `iss-tracker-eks-poller` | DynamoDB `PutItem`, `UpdateItem` only |
 | `iss-tracker-eks-lb-controller` | ALB/NLB management (AWS reference policy) |
+| `iss-tracker-eks-eso` | `secretsmanager:GetSecretValue` on `iss-tracker/*` secrets only |
 
 ### CI/CD
 
-GitHub Actions workflows authenticate to AWS using OIDC (no long-lived credentials). Plan and apply use separate IAM roles:
+**Continuous delivery** is live via ArgoCD. ArgoCD runs inside the cluster and polls this repository; merges to `develop` are automatically synced to the cluster. The cluster reaches out to Git — GitHub never holds cluster credentials or AWS access.
 
+**Continuous integration** via GitHub Actions covers linting, unit tests, Terraform validation, and static security analysis (Checkov, tfsec). The GitHub Actions → AWS authentication architecture is fully implemented in Terraform for demonstration purposes — OIDC federation, separate plan/apply IAM roles, permission boundaries — but is intentionally not connected to a live AWS account. Public repository workflow logs are publicly visible and cannot safely carry AWS credentials or emit account metadata. See [CI/CD design decisions](docs/decisions/cicd/cicd.md).
+
+The OIDC plan/apply role split:
 - **Plan role** — S3 state read only, triggered on pull requests
 - **Apply role** — full infrastructure permissions with permission boundary enforcement, triggered on merge to `develop`
 
@@ -140,11 +167,15 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 │       ├── apps/
 │       └── cicd/
 ├── k8s/
+│   ├── argocd/                 # Namespace: argocd
+│   │   ├── apps/               # ArgoCD Application manifests + deploy.sh
+│   │   ├── helm/               # ArgoCD Helm chart and values
+│   │   └── manifests/          # ExternalSecret resources for ESO
 │   ├── kube-system/            # Namespace: kube-system
 │   │   └── helm/
 │   │       └── aws-load-balancer-controller/
 │   └── iss-tracker/            # Namespace: iss-tracker
-│       ├── helm/               # Application Helm charts (in progress)
+│       ├── helm/               # Application Helm charts
 │       └── manifests/
 │           └── security-group/ # SecurityGroupPolicy (SGP for private Fargate pods)
 └── terraform/
