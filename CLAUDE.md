@@ -73,6 +73,7 @@ API and poller deployed and passing end-to-end smoke tests.
 | Domain context docs | `docs/context/` |
 | Operational runbooks | `docs/runbooks/` |
 | Implementation plans | `plans/` (gitignored) |
+| Committed plan examples | `docs/plan-examples/` |
 
 ---
 
