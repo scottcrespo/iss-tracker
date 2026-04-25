@@ -29,6 +29,11 @@ output "cluster_name" {
   value       = module.eks.cluster_name
 }
 
+output "eso_irsa_role_arn" {
+  description = "ESO IRSA role ARN. Injected into the ESO Helm install as serviceAccount.annotations."
+  value       = aws_iam_role.eso.arn
+}
+
 output "cluster_security_group_id" {
   description = "EKS primary (EKS-managed) cluster SG ID. Consumed by the bastion root to add a TCP/443 ingress rule sourced from the bastion SG. Uses the primary SG because the EKS control plane uses this SG for all connections to pods and to accept inbound API traffic."
   value       = local.eks_primary_sg_id
