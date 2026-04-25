@@ -101,11 +101,11 @@ DynamoDB ◄─── Poller CronJob (private subnet, Fargate)
 
 The VPC uses three subnet tiers. The split between private and intra is intentional — not all workloads need internet access, and giving every pod a NAT route it doesn't need weakens the security posture.
 
-| Subnet type | CIDR | Used for | Internet egress |
-|-------------|------|----------|----------------|
-| Public | `10.0.101-103.0/24` | ALB only | Yes (IGW) |
-| Private | `10.0.1-3.0/24` | iss-tracker Fargate pods, bastion | Yes (NAT gateway) |
-| Intra | `10.0.51-53.0/24` | kube-system Fargate pods | None |
+| Subnet type | CIDR | Aggregate | Used for | Internet egress |
+|-------------|------|-----------|----------|----------------|
+| Public | `10.0.192-194.0/24` | `10.0.192.0/18` | ALB only | Yes (IGW) |
+| Private | `10.0.0-2.0/24` | `10.0.0.0/17` | iss-tracker Fargate pods, bastion | Yes (NAT gateway) |
+| Intra | `10.0.128-130.0/24` | `10.0.128.0/18` | kube-system Fargate pods | None |
 
 The bastion host lives in the private subnet and uses the NAT gateway for outbound internet (kubectl/helm downloads). No public IP is assigned — EC2 Instance Connect Endpoint proxies SSH to its private IP.
 
@@ -183,7 +183,8 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
     │   └── dev/
     │       ├── global/bootstrap/   # IAM roles, OIDC provider, state backend
     │       └── us-east-2/
-    │           ├── eks/            # VPC, EKS cluster, IAM, endpoints, bastion
+    │           ├── eks/            # VPC, EKS cluster, IAM, endpoints
+    │           ├── bastion/        # Bastion host and EICE (separate root)
     │           ├── ecr/            # Container registries
     │           └── dynamodb/       # Application database
     └── modules/                # Reusable Terraform modules
@@ -234,7 +235,8 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 
 | Artifact | Description |
 |----------|-------------|
-| [EKS Terraform root](terraform/environments/dev/us-east-2/eks/) | VPC, EKS, IAM, endpoints, bastion — the most complex root module |
+| [EKS Terraform root](terraform/environments/dev/us-east-2/eks/) | VPC, EKS, IAM, endpoints — the most complex root module |
+| [Bastion Terraform root](terraform/environments/dev/us-east-2/bastion/) | Bastion host and EICE; reads EKS remote state; separate lifecycle from cluster |
 | [EKS design decisions](docs/decisions/terraform/eks.md) | Fargate tradeoffs, private networking, S3 gateway endpoint behavior |
 | [IAM design decisions](docs/decisions/terraform/iam-terraform-role.md) | OIDC federation, permission boundaries, plan/apply separation |
 | [K8s design decisions](docs/decisions/k8s/k8s.md) | Observability on Fargate, Prometheus without DaemonSets |

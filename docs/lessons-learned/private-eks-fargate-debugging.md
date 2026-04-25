@@ -325,9 +325,9 @@ is a signal to re-examine the architecture, not a justification for a broad rule
 
 Section 8 above establishes that NACL rules should be scoped to subnet-tier
 CIDRs rather than the full `vpc_cidr`. After applying that tightening, intra
-NACL DNS rules were scoped to `private_subnets_aggregate` (10.0.0.0/22) — covering
+NACL DNS rules were scoped to `private_subnets_aggregate` (10.0.0.0/17) — covering
 private-subnet pods reaching CoreDNS. What was missed: intra-subnet pods also
-need DNS, and CoreDNS pods are themselves in intra subnets (10.0.51-53.x). Intra
+need DNS, and CoreDNS pods are themselves in intra subnets (10.0.128-130.x). Intra
 pods talking to CoreDNS is intra-to-intra traffic. The rules covering
 `private_subnets_aggregate` don't apply to it.
 
@@ -354,7 +354,7 @@ controller appear healthy right up until it silently stalls.
 ### Confirmation pattern
 
 1. Check where pods are actually running: `kubectl get pods -n kube-system -o wide`
-   Confirm whether pod IPs are in intra (10.0.51-53.x) or private (10.0.0.0/22)
+   Confirm whether pod IPs are in intra (10.0.128-130.x) or private (10.0.0.0/17)
    subnets.
 2. Check intra NACL DNS rules: do they cover the intra subnet range, or only the
    private subnet range?
@@ -451,6 +451,24 @@ prefix            = 24 - log2(block_size)
 ```
 
 For 51, 52, 53: block_size=8, base=floor(51/8)*8=48, prefix=24-3=21 → 10.0.48.0/21.
+
+### Resolution: subnet readdressing eliminated the alignment problem
+
+The above alignment math was required because the original intra subnets
+(10.0.51-53.x) had no clean power-of-2-aligned parent block. The subnet
+readdressing moved all three tiers to exact aggregates:
+
+| Tier | Old subnets | Old aggregate | New subnets | New aggregate |
+|------|-------------|---------------|-------------|---------------|
+| Private | 10.0.1-3.0/24 | 10.0.0.0/22 (includes unused .0.x) | 10.0.0-2.0/24 | 10.0.0.0/17 (exact) |
+| Intra | 10.0.51-53.0/24 | 10.0.48.0/21 (includes 6 unused /24s) | 10.0.128-130.0/24 | 10.0.128.0/18 (exact) |
+| Public | 10.0.101-103.0/24 | none (no clean parent) | 10.0.192-194.0/24 | 10.0.192.0/18 (exact) |
+
+`/17 + /18 + /18 = /16` — the full VPC with no gaps, no overlap, and no
+unallocated ranges included in any aggregate. NACL rule auditing is now a matter
+of inspecting the third octet: `< 128` = private, `128-191` = intra, `192+` = public.
+The alignment math in this section is preserved as documentation of why the
+readdressing was worth doing.
 
 ---
 
