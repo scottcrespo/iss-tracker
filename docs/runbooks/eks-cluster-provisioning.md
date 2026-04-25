@@ -84,7 +84,7 @@ in progress on first boot:
 
 ```bash
 # kubectl context and helm eks repo are configured by user_data; confirm both
-kubectl get nodes        # "No resources found" is correct — Fargate has no visible nodes
+kubectl get nodes        # Fargate nodes appear as fargate-ip-<private-ip>.<region>.compute.internal
 helm repo list | grep eks
 ```
 

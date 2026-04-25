@@ -443,6 +443,29 @@ pods across all AZs sharing that subnet. This is a hard architectural constraint
 and a primary reason to allocate private subnets generously (a `/17` provides
 128 `/24`s of expansion room).
 
+### Fargate nodes are visible in `kubectl get nodes`
+
+Despite common documentation stating Fargate pods are "serverless" with no visible
+nodes, Fargate nodes do appear in `kubectl get nodes` — as virtual node objects
+named `fargate-ip-<private-ip>.<region>.compute.internal`. Each running pod
+produces one such entry. They are Ready and show the Kubernetes version, but have
+no SSH access and no persistent lifecycle outside the pod that caused their
+creation. They are not EC2 instances; they are representations of the Fargate
+microVM in the Kubernetes node registry.
+
+Verification command on a healthy cluster:
+
+```
+$ kubectl get nodes
+NAME                                                 STATUS   ROLES    AGE
+fargate-ip-10-0-129-181.us-east-2.compute.internal   Ready    <none>   3m36s
+fargate-ip-10-0-130-48.us-east-2.compute.internal    Ready    <none>   42m
+```
+
+The presence of these entries — not "No resources found" — is the correct
+indicator that Fargate pods are running and the kubeconfig is pointed at the
+right cluster.
+
 ### Why this doesn't match the AWS documentation
 
 AWS's documentation describes the branch ENI model accurately but incompletely.
