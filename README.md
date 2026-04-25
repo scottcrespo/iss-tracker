@@ -189,10 +189,10 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 - [x] GitHub Actions workflows for bootstrap, app, and environment infrastructure
 - [x] OIDC-based authentication (no stored AWS credentials)
 - [x] Separate plan and apply roles
+- [x] ArgoCD GitOps loop — automated sync on `develop` push; External Secrets Operator for secrets management; no CI cluster access, no secrets in Git
 
 ## To Do
 
-- [ ] ArgoCD — GitOps-based delivery for api and poller workloads; External Secrets Operator for secrets management; no CI cluster access, no secrets in Git
 - [ ] Kubernetes container security hardening — RBAC, ServiceAccount policies, SecurityContext (`runAsNonRoot`, `readOnlyRootFilesystem`, drop capabilities)
 - [ ] Prometheus + Pushgateway for poller heartbeat metrics
 - [ ] Grafana dashboard
@@ -208,6 +208,7 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 | [IAM design decisions](docs/decisions/terraform/iam-terraform-role.md) | OIDC federation, permission boundaries, plan/apply separation |
 | [K8s design decisions](docs/decisions/k8s/k8s.md) | Observability on Fargate, Prometheus without DaemonSets |
 | [CI/CD design decisions](docs/decisions/cicd/cicd.md) | Branch-per-environment strategy, OIDC auth pattern |
+| [ArgoCD design decisions](docs/decisions/cicd/argocd.md) | GitOps loop, ESO secrets injection, deploy.sh pattern, deferred AVP |
 | [API application](apps/api/) | FastAPI, DynamoDB access patterns, dependency injection |
 | [Poller application](apps/poller/) | CronJob pattern, retry logic, Pushgateway metrics |
 | [Bootstrap Terraform](terraform/environments/dev/global/bootstrap/) | IAM chicken-and-egg solution, OIDC provider provisioning |

@@ -7,6 +7,7 @@ Patterns, anti-patterns, and known gotchas for Terraform usage in this project.
 - A new state drift incident is discovered — add to the known gotchas
 - Module pinning or sourcing conventions change
 - A new Checkov suppression pattern is established
+- A new governance-verification test pattern is established for modules
 
 ---
 
@@ -24,6 +25,68 @@ reproducibility.
 **IAM policy content is always caller-defined.** No module in this codebase
 defines what an identity is allowed to do. See `docs/context/aws.md` IAM
 Governance rules.
+
+**Module-provisioned security groups are caller-toggleable.** Any module
+that creates a security group exposes the SG as caller-toggleable via two
+coordinated inputs:
+
+1. `create_<name>_security_group` — boolean, default `true`. Gates the
+   `aws_security_group` resource and every rule whose `security_group_id`
+   attaches to it (bundled as one unit, one flag per SG not per rule).
+2. `<name>_security_group_id` — string, default `null`. When the create
+   flag is `false`, the caller supplies an externally-managed SG ID here.
+
+Exactly one path must be selected per SG, enforced by two `validation`
+blocks on the ID variable:
+
+```hcl
+validation {
+  condition     = !(var.create_<name>_security_group == false && var.<name>_security_group_id == null)
+  error_message = "When create_<name>_security_group is false, <name>_security_group_id must be provided."
+}
+validation {
+  condition     = !(var.create_<name>_security_group == true && var.<name>_security_group_id != null)
+  error_message = "When create_<name>_security_group is true, <name>_security_group_id must be null - the module manages the SG."
+}
+```
+
+The module resolves the SG ID through a local that returns whichever
+path the caller selected:
+
+```hcl
+local.<name>_sg_id = var.create_<name>_security_group ? one(aws_security_group.<name>[*].id) : var.<name>_security_group_id
+```
+
+All internal references - the `vpc_security_group_ids` on EC2 instances,
+the `security_group_ids` on endpoints, the `source_security_group_id` on
+cross-reference rules - consume the local. They do not care which path
+produced the ID, so every combination of flags across multiple SGs in the
+module works correctly. Cross-reference rules between two module-managed
+SGs require no compound gates because the locals always resolve.
+
+Tests must cover the default path (SGs created), the external path
+(SGs skipped, external IDs flow through to downstream resources and
+outputs), and the validation failures (one path must be selected).
+
+See `terraform/modules/bastion/` for the reference implementation and
+`terraform/modules/bastion/tests/bastion.tftest.hcl` for the test
+pattern.
+
+**Modules accepting IAM policy content must verify ownership via `terraform test`.**
+Any module that accepts a policy document (or map of documents) as input must
+include test cases asserting:
+
+1. **Content equality** — `jsondecode(attached_policy) == jsondecode(input_policy)`
+   for each policy passed in. Proves the module does not rewrite, wrap, or
+   re-serialize the caller's policy document.
+2. **Count equality** — `length(attached_policies) == length(input_policies)`.
+   Proves the module does not attach policies the caller did not specify.
+
+Together these verify the IAM Governance rule at the module level: policy
+content flows through the module unchanged, and the module contributes no
+policy content of its own. Tests run under `mock_provider "aws"` so no AWS
+credentials or live resources are required. See
+`terraform/modules/bastion/tests/` for the reference implementation.
 
 **File organization within a root module:**
 

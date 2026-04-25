@@ -1,193 +1,4 @@
 # ---------------------------------------------------------------------------
-# EKS Cluster Role
-# ---------------------------------------------------------------------------
-#
-# Assumed by the EKS control plane to manage AWS resources on behalf of the
-# cluster — creating cross-account ENIs, describing EC2 resources, managing
-# load balancer targets, etc.
-#
-# AmazonEKSClusterPolicy is the AWS-managed policy that grants exactly the
-# permissions the control plane needs. No inline policy required.
-
-resource "aws_iam_role" "eks_cluster" {
-  name = "iss-tracker-eks-cluster"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowEKSControlPlane"
-        Effect = "Allow"
-        Action = "sts:AssumeRole"
-        Principal = {
-          Service = "eks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "eks_cluster" {
-  role       = aws_iam_role.eks_cluster.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-# ---------------------------------------------------------------------------
-# Fargate Pod Execution Role
-# ---------------------------------------------------------------------------
-#
-# Assumed by the Fargate infrastructure (not the pod itself) when launching
-# a pod. Used for two things only:
-#   1. Pulling container images from ECR
-#   2. Shipping container logs to CloudWatch via the built-in log router
-#
-# This is distinct from IRSA roles — the execution role is about running the
-# pod, not what the pod's application code is allowed to do in AWS.
-#
-# AmazonEKSFargatePodExecutionRolePolicy grants the minimum ECR and
-# CloudWatch Logs permissions required. No inline policy needed.
-
-resource "aws_iam_role" "eks_fargate" {
-  name = "iss-tracker-eks-fargate"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowFargatePodExecution"
-        Effect = "Allow"
-        Action = "sts:AssumeRole"
-        Principal = {
-          Service = "eks-fargate-pods.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "eks_fargate" {
-  role       = aws_iam_role.eks_fargate.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy"
-}
-
-# ---------------------------------------------------------------------------
-# IRSA — API
-# ---------------------------------------------------------------------------
-#
-# Assumed by the API pod via Kubernetes service account annotation. Grants
-# read/write access to the ISS DynamoDB table only.
-#
-# Trust is scoped to the exact service account (default/api) using
-# StringEquals — the same OIDC federation pattern as the LB Controller but
-# pointed at the application namespace and service account name.
-
-resource "aws_iam_role" "irsa_api" {
-  name = "iss-tracker-eks-api"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowAPIServiceAccount"
-        Effect = "Allow"
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Principal = {
-          Federated = module.eks.oidc_provider_arn
-        }
-        Condition = {
-          StringEquals = {
-            "${module.eks.oidc_provider}:aud" = "sts.amazonaws.com"
-            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:iss-tracker:api"
-          }
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "irsa_api" {
-  name = "dynamodb-access"
-  role = aws_iam_role.irsa_api.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowDynamoDBAccess"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:DescribeTable",
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan",
-          "dynamodb:BatchGetItem",
-          "dynamodb:BatchWriteItem",
-        ]
-        Resource = "arn:aws:dynamodb:${local.region}:${local.account_id}:table/iss-tracker-*"
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
-# IRSA — Poller
-# ---------------------------------------------------------------------------
-#
-# Assumed by the Poller CronJob pod. Grants write-only access to the ISS
-# DynamoDB table — the poller only records position data, it never reads it.
-#
-# Scoped to the iss-tracker namespace and poller service account, same
-# pattern as the API role.
-
-resource "aws_iam_role" "irsa_poller" {
-  name = "iss-tracker-eks-poller"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowPollerServiceAccount"
-        Effect = "Allow"
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Principal = {
-          Federated = module.eks.oidc_provider_arn
-        }
-        Condition = {
-          StringEquals = {
-            "${module.eks.oidc_provider}:aud" = "sts.amazonaws.com"
-            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:iss-tracker:poller"
-          }
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "irsa_poller" {
-  name = "dynamodb-write"
-  role = aws_iam_role.irsa_poller.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowDynamoDBWrite"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:DescribeTable",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-        ]
-        Resource = "arn:aws:dynamodb:${local.region}:${local.account_id}:table/iss-tracker-*"
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
 # IRSA — AWS Load Balancer Controller
 # ---------------------------------------------------------------------------
 #
@@ -476,6 +287,67 @@ resource "aws_iam_role_policy" "lb_controller" {
         ]
         Resource = "*"
       },
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# IRSA — External Secrets Operator
+# ---------------------------------------------------------------------------
+#
+# ESO is a Kubernetes controller that watches ExternalSecret and
+# ClusterSecretStore CRDs, reading sensitive values from AWS Secrets Manager
+# and reconciling them into native K8s Secret resources for workloads to
+# consume. It is a cluster-level controller — not an application workload —
+# and runs in the argocd namespace alongside ArgoCD.
+#
+# Grants read access to Secrets Manager secrets under the iss-tracker/*
+# path — used to surface sensitive Helm values (ECR repo URL, IRSA ARNs)
+# into the cluster without committing them to Git.
+#
+# Service account is named "external-secrets" in the argocd namespace,
+# matching the ESO chart's default service account name.
+
+resource "aws_iam_role" "eso" {
+  name = "iss-tracker-eks-eso"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowESOServiceAccount"
+        Effect = "Allow"
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Principal = {
+          Federated = module.eks.oidc_provider_arn
+        }
+        Condition = {
+          StringEquals = {
+            "${module.eks.oidc_provider}:aud" = "sts.amazonaws.com"
+            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:argocd:external-secrets"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "eso" {
+  name = "secrets-manager-read"
+  role = aws_iam_role.eso.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowSecretsManagerRead"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ]
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:iss-tracker/*"
+      }
     ]
   })
 }

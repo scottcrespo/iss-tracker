@@ -101,13 +101,20 @@ cd k8s/iss-tracker/helm/poller && ./helmwrap.sh install
 These are working norms — strong preferences, not hard stops.
 
 **Plan before building.** New features or architectural additions should have a
-text-based plan in `plans/` before implementation begins. A good plan covers:
-- Proposed architecture and any new tools or services introduced
-- Security considerations: least-privilege IAM and network access scoping
-- Change impact analysis — what existing components are affected
-- Estimated level of effort and complexity
-- Test and verification plan — how functional correctness and security controls
-  will be validated before the feature is considered complete
+text-based plan in `plans/` before implementation begins. The following are
+required attributes of a plan:
+
+1. **Proposed architecture** — any new tools, services, or modules introduced
+2. **Security considerations** — least-privilege IAM and network access scoping
+3. **Change impact analysis** — what existing components are affected
+4. **Estimated level of effort and complexity**
+5. **Test and verification plan** — how functional correctness and security
+   controls will be validated before the feature is considered complete
+
+A required attribute may be waived for a given plan when the developer
+determines it does not apply (e.g., a pure refactor with no security surface
+change may waive item 2). The waiver and its rationale are recorded inline in
+the plan.
 
 Plans are working documents and gitignored. Once implemented, the lasting
 artifacts are the decision records in `docs/decisions/` and lessons learned
