@@ -61,6 +61,8 @@ crds:
   createPushSecret: true
   annotations: {}
   conversion:
+    # Disabled alongside webhook and certController — conversion webhook is
+    # not needed since v1alpha1 is no longer supported.
     enabled: false
 
 # ---------------------------------------------------------------------------
@@ -214,7 +216,9 @@ webhook:
 # Cert controller component
 # ---------------------------------------------------------------------------
 certController:
-  create: true
+  # Disabled alongside webhook — cert controller manages TLS certs for the
+  # webhook only and has nothing to reconcile when webhook.create is false.
+  create: false
   replicaCount: 1
   revisionHistoryLimit: 10
 
