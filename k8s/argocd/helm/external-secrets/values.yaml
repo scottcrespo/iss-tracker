@@ -149,7 +149,11 @@ metrics:
 # Webhook component
 # ---------------------------------------------------------------------------
 webhook:
-  create: true
+  # Disabled: ESO cert controller generates certs scoped to Fargate node DNS
+  # names, not the webhook service DNS name, causing x509 validation failures
+  # on the API server's webhook call. ESO functions without the webhook —
+  # CRD validation moves from admission time to reconciliation time.
+  create: false
   replicaCount: 1
   revisionHistoryLimit: 10
   failurePolicy: Fail
