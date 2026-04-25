@@ -12,6 +12,7 @@
 # local.bastion_sg_id, which resolves under any combination of toggles.
 
 resource "aws_security_group" "eice" {
+  #checkov:skip=CKV2_AWS_5: SG is attached to the EC2 Instance Connect Endpoint in eice.tf - Checkov cannot trace the attachment through the module
   count = var.create_eice_security_group ? 1 : 0
 
   name        = "${var.name_prefix}-eice"

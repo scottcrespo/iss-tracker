@@ -9,6 +9,7 @@
 # any combination of toggles.
 
 resource "aws_security_group" "bastion" {
+  #checkov:skip=CKV2_AWS_5: SG is attached to the bastion EC2 instance in main.tf - Checkov cannot trace the attachment through the module
   count = var.create_bastion_security_group ? 1 : 0
 
   name        = "${var.name_prefix}-bastion"
