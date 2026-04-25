@@ -62,6 +62,39 @@ The deploy workflow becomes: developer builds image manually → pushes to ECR m
 
 Once ArgoCD manages the `api` and `poller` Helm releases, `helmwrap.sh` is no longer the standard deploy path. It may be retained for emergency out-of-band deploys (e.g., ArgoCD itself is down and an urgent fix is needed), but the documented and expected path is `git commit` → ArgoCD sync.
 
+## Application manifest injection via deploy.sh rather than ArgoCD Vault Plugin
+
+ArgoCD `Application` manifests reference Helm parameters that cannot be committed
+to Git: `image.repository` (an ECR URL containing the AWS account ID) and IRSA
+role ARNs. The production pattern for injecting these at sync time is the
+ArgoCD Vault Plugin (AVP) — a Config Management Plugin (CMP) sidecar that
+performs placeholder substitution directly in Application specs or values files,
+keeping the full manifest in Git without exposing sensitive values.
+
+This project uses `k8s/argocd/apps/deploy.sh` instead of AVP. The script reads
+ESO-synced K8s secrets from the `argocd` namespace and pipes them into
+`kubectl apply` as Helm parameter overrides on the Application manifest.
+
+Why not AVP here:
+1. **Installing AVP requires modifying the ArgoCD deployment** — registering it
+   as a CMP sidecar, configuring a plugin ConfigMap, and patching the repo-server
+   container. This is meaningful configuration surface for a portfolio project
+   where the core GitOps loop is already demonstrated without it.
+2. **ESO is already deployed for the same purpose** — ESO surfaces Secrets Manager
+   values into the cluster as native K8s secrets for the app workloads. Extending
+   that pattern to also serve ArgoCD Application parameters is a minimal change
+   that avoids introducing a second secrets-injection dependency.
+3. **AVP is ArgoCD-specific; ESO is general-purpose** — any controller in the
+   cluster can use ESO. Using it for ArgoCD Application injection is consistent
+   with how app secrets are managed.
+
+The accepted trade-off: Application manifests are not version-controlled in Git.
+Their state lives in the cluster (`kubectl get application -n argocd`). For a
+single-developer project where `deploy.sh` is the documented and auditable deploy
+path, this is acceptable. The ESO wiring and ClusterSecretStore are correct and
+production-ready; only the final injection step deviates from the standard pattern.
+AVP or an equivalent CMP is the path forward if this moves to production.
+
 ## Decisions deferred
 
 The following are explicitly out of scope for the initial implementation and tracked in `plans/argocd.md`:

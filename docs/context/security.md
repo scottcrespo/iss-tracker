@@ -4,7 +4,6 @@ Security principles, controls by layer, and iteration sequence for this project.
 
 **Update this document when:**
 - Container security hardening is complete — move the secure baseline planned items to current baseline
-- ESO is in place — add secrets management pattern to the identity and access controls section
 - A new security principle or anti-pattern is established
 - The security iteration sequence changes
 
@@ -53,6 +52,9 @@ accumulates permissions beyond its function.
 - Trust policies use `StringEquals` on exact namespace and service account name
 - Permission boundaries on all roles with IAM write permissions
 - No long-lived AWS credentials anywhere in the system
+- Sensitive Helm values (ECR URLs, IRSA ARNs) stored in AWS Secrets Manager;
+  External Secrets Operator surfaces them as native K8s secrets in the cluster.
+  ESO IRSA role is scoped to `secretsmanager:GetSecretValue` on `iss-tracker/*` only.
 
 **CI/CD**
 - GitHub Actions does not have AWS credentials or cluster access. This project

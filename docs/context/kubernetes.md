@@ -3,7 +3,6 @@
 Patterns, anti-patterns, and known gotchas for Kubernetes usage in this project.
 
 **Update this document when:**
-- ArgoCD goes live — replace helmwrap.sh references with ArgoCD Application patterns; update deploy workflow
 - A new namespace is added — update the subnet tier table and document its SG/profile requirements
 - Container security hardening is complete — move secure baseline items from planned to current
 - A new Fargate-specific constraint or gotcha is discovered
@@ -41,10 +40,33 @@ Two-part requirement for every new namespace with distinct network needs:
 
 ---
 
+## Deploy Workflow
+
+**Standard deploy path — ArgoCD GitOps loop:**
+1. Build and push image manually (local or bastion)
+2. Update `image.digest` in `values.yaml` in the chart directory
+3. Commit and push to `develop`
+4. ArgoCD detects the change on its next poll and auto-syncs (`automated.selfHeal: true`)
+
+`helmwrap.sh` is retained for emergency out-of-band deploys (e.g., ArgoCD itself
+is unavailable). It is no longer the standard path.
+
+**ArgoCD Application bootstrap** (one-time, on new cluster):
+```bash
+# Apply ESO secrets that inject ECR URL and IRSA ARN at apply time
+kubectl apply -f k8s/argocd/manifests/
+
+# Apply Application manifests with sensitive values injected from ESO-synced secrets
+cd k8s/argocd/apps && ./deploy.sh apply api && ./deploy.sh apply poller
+```
+
+---
+
 ## Helm Conventions
 
-- Use `helmwrap.sh` — never call `helm` directly. The wrapper injects sensitive
-  values (ECR repo URL, IRSA role ARN) that must not be stored in `values.yaml`
+- Use `helmwrap.sh` for emergency deploys only — the standard path is ArgoCD.
+  When using helmwrap, never call `helm` directly; the wrapper injects sensitive
+  values (ECR repo URL, IRSA role ARN) that must not be stored in `values.yaml`.
 - All images launched by a chart must be declared explicitly in `values.yaml`
   regardless of whether the component is enabled:
   - **Enabled components** — image tag must include a resolved SHA256 digest
