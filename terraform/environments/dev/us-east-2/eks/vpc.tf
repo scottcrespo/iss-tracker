@@ -295,6 +295,32 @@ module "vpc" {
       to_port     = 65535
       cidr_block  = local.private_subnets_aggregate
     },
+    # Ephemeral return traffic (TCP) — intra-to-intra (e.g., API server ENI → webhook pods on 9443)
+    # Three individual rules, one per intra subnet, so the CIDR is unambiguous.
+    {
+      rule_number = 136
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "10.0.51.0/24"
+    },
+    {
+      rule_number = 137
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "10.0.52.0/24"
+    },
+    {
+      rule_number = 138
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = "10.0.53.0/24"
+    },
     # ICMP type 3 — Destination Unreachable (Path MTU Discovery)
     {
       rule_number = 140
