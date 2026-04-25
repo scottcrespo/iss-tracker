@@ -4,6 +4,24 @@ A full-stack cloud-native application that tracks the real-time position of the 
 
 ---
 
+## Contents
+
+- [Purpose](#purpose)
+- [System Overview](#system-overview)
+- [Technology Stack](#technology-stack)
+- [Design Principles](#design-principles)
+- [Architecture](#architecture)
+  - [VPC Layout](#vpc-layout)
+  - [VPC Endpoints](#vpc-endpoints)
+  - [IAM / IRSA](#iam--irsa)
+  - [CI/CD](#cicd)
+- [Repository Structure](#repository-structure)
+- [Current State](#current-state)
+- [To Do](#to-do)
+- [Key Portfolio Elements](#key-portfolio-elements)
+
+---
+
 ## Purpose
 
 This project exists to demonstrate end-to-end platform engineering skills in a realistic context — not just "infrastructure that works" but infrastructure designed with the same principles applied in production environments: security boundaries, least-privilege IAM, private networking, GitOps workflows, and documented architectural decisions.
