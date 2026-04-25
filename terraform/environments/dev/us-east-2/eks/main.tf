@@ -24,16 +24,16 @@ data "aws_eks_cluster" "this" {
 locals {
   cluster_name = "iss-tracker-eks"
   vpc_cidr     = "10.0.0.0/16"
-  # Aggregate CIDR covering only the private subnet tier (10.0.0-3.0/24).
-  # Used in intra NACL rules to avoid permitting public subnets (10.0.101.x)
-  # into the intra tier. Excludes intra (10.0.51.x) and public (10.0.101.x).
-  private_subnets_aggregate = "10.0.0.0/22"
-  # Aggregate CIDR covering all three intra subnets (10.0.51.0/24, 10.0.52.0/24,
-  # 10.0.53.0/24). 10.0.48.0/21 is the smallest /21-aligned block (48 is a
-  # multiple of 8) containing all three; ranges 10.0.48-50.x and 10.0.54-55.x
-  # are unallocated and unreachable in this VPC. Used to stay within the AWS
-  # 20-rule NACL limit while keeping intra-to-intra traffic rules explicit.
-  intra_subnets_aggregate = "10.0.48.0/21"
+  # Aggregate CIDR for the private subnet tier. 10.0.0.0/17 is the exact
+  # power-of-2-aligned parent block for all private /24s (10.0.0-2.0/24)
+  # with room for future expansion. No unallocated ranges are included in
+  # any other tier's address space. Any IP < 10.0.128.0 is private tier.
+  private_subnets_aggregate = "10.0.0.0/17"
+  # Aggregate CIDR for the intra subnet tier. 10.0.128.0/18 is the exact
+  # parent block for all intra /24s (10.0.128-130.0/24). Together with the
+  # public /18 (10.0.192.0/18), the three tiers partition 10.0.0.0/16 exactly:
+  # /17 + /18 + /18 = /16 — no gaps, no overlap.
+  intra_subnets_aggregate = "10.0.128.0/18"
   account_id              = data.aws_caller_identity.current.account_id
   region                  = data.aws_region.current.name
   eks_primary_sg_id       = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id

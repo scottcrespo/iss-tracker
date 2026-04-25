@@ -101,11 +101,11 @@ DynamoDB ◄─── Poller CronJob (private subnet, Fargate)
 
 The VPC uses three subnet tiers. The split between private and intra is intentional — not all workloads need internet access, and giving every pod a NAT route it doesn't need weakens the security posture.
 
-| Subnet type | CIDR | Used for | Internet egress |
-|-------------|------|----------|----------------|
-| Public | `10.0.101-103.0/24` | ALB only | Yes (IGW) |
-| Private | `10.0.1-3.0/24` | iss-tracker Fargate pods, bastion | Yes (NAT gateway) |
-| Intra | `10.0.51-53.0/24` | kube-system Fargate pods | None |
+| Subnet type | CIDR | Aggregate | Used for | Internet egress |
+|-------------|------|-----------|----------|----------------|
+| Public | `10.0.192-194.0/24` | `10.0.192.0/18` | ALB only | Yes (IGW) |
+| Private | `10.0.0-2.0/24` | `10.0.0.0/17` | iss-tracker Fargate pods, bastion | Yes (NAT gateway) |
+| Intra | `10.0.128-130.0/24` | `10.0.128.0/18` | kube-system Fargate pods | None |
 
 The bastion host lives in the private subnet and uses the NAT gateway for outbound internet (kubectl/helm downloads). No public IP is assigned — EC2 Instance Connect Endpoint proxies SSH to its private IP.
 

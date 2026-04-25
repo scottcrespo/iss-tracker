@@ -12,7 +12,7 @@ module "vpc" {
   # NAT gateway provides outbound internet so the poller can reach the public
   # ISS position API. A single NAT gateway is sufficient for dev — one per AZ
   # would be required for production HA.
-  private_subnets               = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  private_subnets               = ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"]
   private_dedicated_network_acl = true
   private_inbound_acl_rules = [
     # Return traffic from internet via NAT gateway (ISS API responses) and
@@ -127,10 +127,10 @@ module "vpc" {
   # ---------------------------------------------------------------------------
   # Intra subnets — Fargate pods with no internet egress (kube-system)
   # ---------------------------------------------------------------------------
-  intra_subnets               = ["10.0.51.0/24", "10.0.52.0/24", "10.0.53.0/24"]
+  intra_subnets               = ["10.0.128.0/24", "10.0.129.0/24", "10.0.130.0/24"]
   intra_dedicated_network_acl = true
   intra_inbound_acl_rules = [
-    # Scoped to private_subnets_aggregate (10.0.0.0/22) rather than vpc_cidr —
+    # Scoped to private_subnets_aggregate (10.0.0.0/17) rather than vpc_cidr —
     # only the private tier legitimately communicates with intra tier resources
     # (CoreDNS, VPC endpoints). Public subnets must not have a NACL-permitted
     # path into the intra tier.
@@ -144,7 +144,7 @@ module "vpc" {
     },
     # Intra-to-intra HTTPS — pods reaching the API server control plane ENI or
     # VPC endpoints in other intra subnets (LB controller, leader election, webhooks).
-    # Uses intra_subnets_aggregate (10.0.48.0/21) — see main.tf locals for rationale.
+    # Uses intra_subnets_aggregate (10.0.128.0/18) — see main.tf locals for rationale.
     {
       rule_number = "101"
       rule_action = "allow"
@@ -406,7 +406,7 @@ module "vpc" {
       cidr_block  = local.private_subnets_aggregate
     },
   ]
-  public_subnets               = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+  public_subnets               = ["10.0.192.0/24", "10.0.193.0/24", "10.0.194.0/24"]
   public_dedicated_network_acl = true
   public_inbound_acl_rules = [
     # Internet HTTP
