@@ -121,6 +121,13 @@ jobs:
           terraform init
           terraform test
 
+      - name: Test — bastion
+        working-directory: terraform/modules/bastion
+        # Uses mock_provider so no AWS credentials are required
+        run: |
+          terraform init
+          terraform test
+
   # plan and apply jobs are not implemented for this public repository.
   #
   # Terraform plan output contains fully resolved resource attributes (account IDs,
