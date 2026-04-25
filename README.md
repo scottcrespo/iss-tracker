@@ -183,7 +183,8 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
     │   └── dev/
     │       ├── global/bootstrap/   # IAM roles, OIDC provider, state backend
     │       └── us-east-2/
-    │           ├── eks/            # VPC, EKS cluster, IAM, endpoints, bastion
+    │           ├── eks/            # VPC, EKS cluster, IAM, endpoints
+    │           ├── bastion/        # Bastion host and EICE (separate root)
     │           ├── ecr/            # Container registries
     │           └── dynamodb/       # Application database
     └── modules/                # Reusable Terraform modules
@@ -234,7 +235,8 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 
 | Artifact | Description |
 |----------|-------------|
-| [EKS Terraform root](terraform/environments/dev/us-east-2/eks/) | VPC, EKS, IAM, endpoints, bastion — the most complex root module |
+| [EKS Terraform root](terraform/environments/dev/us-east-2/eks/) | VPC, EKS, IAM, endpoints — the most complex root module |
+| [Bastion Terraform root](terraform/environments/dev/us-east-2/bastion/) | Bastion host and EICE; reads EKS remote state; separate lifecycle from cluster |
 | [EKS design decisions](docs/decisions/terraform/eks.md) | Fargate tradeoffs, private networking, S3 gateway endpoint behavior |
 | [IAM design decisions](docs/decisions/terraform/iam-terraform-role.md) | OIDC federation, permission boundaries, plan/apply separation |
 | [K8s design decisions](docs/decisions/k8s/k8s.md) | Observability on Fargate, Prometheus without DaemonSets |

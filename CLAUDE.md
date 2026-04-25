@@ -62,6 +62,8 @@ API and poller deployed and passing end-to-end smoke tests.
 | Fargate profiles, cluster SG rules | `terraform/environments/dev/us-east-2/eks/eks.tf` |
 | VPC, subnets, NACLs | `terraform/environments/dev/us-east-2/eks/vpc.tf` |
 | VPC endpoints | `terraform/environments/dev/us-east-2/eks/endpoints.tf` |
+| Bastion host (dedicated root) | `terraform/environments/dev/us-east-2/bastion/` |
+| Bastion reusable module | `terraform/modules/bastion/` |
 | API Helm chart | `k8s/iss-tracker/helm/api/` |
 | Poller Helm chart | `k8s/iss-tracker/helm/poller/` |
 | LB controller Helm chart | `k8s/kube-system/helm/aws-load-balancer-controller/` |
@@ -69,6 +71,7 @@ API and poller deployed and passing end-to-end smoke tests.
 | Architecture decision records | `docs/decisions/` |
 | Lessons learned | `docs/lessons-learned/` |
 | Domain context docs | `docs/context/` |
+| Operational runbooks | `docs/runbooks/` |
 | Implementation plans | `plans/` (gitignored) |
 
 ---
@@ -145,3 +148,4 @@ when working in the relevant areas of the codebase.
 - @docs/context/kubernetes.md
 - @docs/context/security.md
 - @docs/context/cicd.md
+- @docs/context/runbooks.md
