@@ -65,12 +65,12 @@ run "iam_policy_content_unchanged" {
   # Content equality: attached policy equals caller's input, byte-for-byte
   # (after jsondecode normalization for whitespace/ordering).
   assert {
-    condition = jsondecode(aws_iam_role_policy.bastion["eks_describe"].policy) == jsondecode(var.iam_policies["eks_describe"])
+    condition     = jsondecode(aws_iam_role_policy.bastion["eks_describe"].policy) == jsondecode(var.iam_policies["eks_describe"])
     error_message = "Module mutated the eks_describe policy document - caller ownership violated"
   }
 
   assert {
-    condition = jsondecode(aws_iam_role_policy.bastion["s3_read"].policy) == jsondecode(var.iam_policies["s3_read"])
+    condition     = jsondecode(aws_iam_role_policy.bastion["s3_read"].policy) == jsondecode(var.iam_policies["s3_read"])
     error_message = "Module mutated the s3_read policy document - caller ownership violated"
   }
 
