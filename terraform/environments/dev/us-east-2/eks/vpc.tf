@@ -142,7 +142,18 @@ module "vpc" {
       to_port     = "443"
       cidr_block  = local.private_subnets_aggregate
     },
-    # DNS TCP
+    # Intra-to-intra HTTPS — pods reaching the API server control plane ENI or
+    # VPC endpoints in other intra subnets (LB controller, leader election, webhooks).
+    # Uses intra_subnets_aggregate (10.0.48.0/21) — see main.tf locals for rationale.
+    {
+      rule_number = "101"
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = "443"
+      to_port     = "443"
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # DNS TCP — from private subnet pods
     {
       rule_number = "110"
       rule_action = "allow"
@@ -151,7 +162,16 @@ module "vpc" {
       to_port     = "53"
       cidr_block  = local.private_subnets_aggregate
     },
-    # DNS UDP
+    # DNS TCP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = "111"
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = "53"
+      to_port     = "53"
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # DNS UDP — from private subnet pods
     {
       rule_number = "120"
       rule_action = "allow"
@@ -159,6 +179,15 @@ module "vpc" {
       from_port   = "53"
       to_port     = "53"
       cidr_block  = local.private_subnets_aggregate
+    },
+    # DNS UDP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = "121"
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = "53"
+      to_port     = "53"
+      cidr_block  = local.intra_subnets_aggregate
     },
     # UDP ephemeral return traffic — VPC DNS resolver (10.0.0.2) responds to
     # CoreDNS forwarded queries with UDP from port 53 to CoreDNS's ephemeral
@@ -171,6 +200,16 @@ module "vpc" {
       from_port   = "1024"
       to_port     = "65535"
       cidr_block  = local.private_subnets_aggregate
+    },
+    # UDP ephemeral return traffic — intra-to-intra (CoreDNS responses to kube-system
+    # pods in other intra subnets, and other intra-to-intra UDP return traffic)
+    {
+      rule_number = "126"
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = "1024"
+      to_port     = "65535"
+      cidr_block  = local.intra_subnets_aggregate
     },
     # Ephemeral ports — return traffic from VPC endpoints to private subnet pods
     {
@@ -256,7 +295,7 @@ module "vpc" {
       to_port     = 443
       cidr_block  = "0.0.0.0/0"
     },
-    # DNS TCP — responses back to private subnet pods only
+    # DNS TCP — to private subnet pods
     {
       rule_number = 110
       rule_action = "allow"
@@ -265,7 +304,16 @@ module "vpc" {
       to_port     = 53
       cidr_block  = local.private_subnets_aggregate
     },
-    # DNS UDP — responses back to private subnet pods only
+    # DNS TCP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = 111
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # DNS UDP — to private subnet pods
     {
       rule_number = 120
       rule_action = "allow"
@@ -273,6 +321,15 @@ module "vpc" {
       from_port   = 53
       to_port     = 53
       cidr_block  = local.private_subnets_aggregate
+    },
+    # DNS UDP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = 121
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.intra_subnets_aggregate
     },
     # Ephemeral return traffic (TCP) — to private subnet pods only
     {
@@ -295,31 +352,25 @@ module "vpc" {
       to_port     = 65535
       cidr_block  = local.private_subnets_aggregate
     },
-    # Ephemeral return traffic (TCP) — intra-to-intra (e.g., API server ENI → webhook pods on 9443)
-    # Three individual rules, one per intra subnet, so the CIDR is unambiguous.
+    # Ephemeral return traffic (TCP) — intra-to-intra (API server ENI → webhook pods,
+    # LB controller → API server, etc.)
     {
       rule_number = 136
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 1024
       to_port     = 65535
-      cidr_block  = "10.0.51.0/24"
+      cidr_block  = local.intra_subnets_aggregate
     },
+    # Ephemeral return traffic (UDP) — intra-to-intra (CoreDNS responses to kube-system
+    # pods in other intra subnets). NACLs are stateless; rule 135 only covers private subnets.
     {
-      rule_number = 137
+      rule_number = 141
       rule_action = "allow"
-      protocol    = "tcp"
+      protocol    = "udp"
       from_port   = 1024
       to_port     = 65535
-      cidr_block  = "10.0.52.0/24"
-    },
-    {
-      rule_number = 138
-      rule_action = "allow"
-      protocol    = "tcp"
-      from_port   = 1024
-      to_port     = 65535
-      cidr_block  = "10.0.53.0/24"
+      cidr_block  = local.intra_subnets_aggregate
     },
     # ICMP type 3 — Destination Unreachable (Path MTU Discovery)
     {
