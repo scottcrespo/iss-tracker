@@ -349,6 +349,75 @@ Every pod SG on Fargate must explicitly allow:
    (direct pod IP communication)
 3. Self-referencing rules are insufficient for service communication
 
+### The egress enforcement gap and NetworkPolicy as compensation
+
+The pre-DNAT SG evaluation model creates an asymmetric enforcement surface that
+has a direct consequence for pod-to-service access control.
+
+**Egress side — control is lost.**
+A pod's egress SG must allow `172.20.0.0/16` (the full service CIDR) for any
+service communication to work. At egress evaluation time, all Kubernetes services
+look identical — they are all `172.20.x.x`. The SG cannot distinguish "allow
+traffic to CoreDNS" from "allow traffic to some other service in a different subnet
+tier." The egress SG is reduced to a binary control: can this pod use Kubernetes
+services at all. Fine-grained per-service or per-destination-tier egress enforcement
+at the SG level is not possible on Fargate.
+
+**Ingress side — control is intact.**
+The destination pod's ingress SG evaluates the packet post-DNAT. It sees the real
+source IP (`10.0.0.5`) and the real destination port. Ingress rules can still be
+scoped to specific source SGs or source CIDRs. "Allow DNS only from `sg-argocd`"
+works correctly. The ingress half of SG enforcement is unaffected.
+
+**Practical consequence: NACLs become load-bearing for subnet segmentation.**
+With egress SGs unable to enforce which services a pod can reach, the only control
+left for subnet-level egress segmentation is the NACL at the subnet boundary. A
+NACL can enforce "pods in private subnets can reach pods in intra subnets on port
+53" and nothing else from public. That is subnet-granularity control — it
+distinguishes tiers but cannot distinguish services within a tier or pods within
+a subnet.
+
+**The correct compensation control is NetworkPolicy.**
+`NetworkPolicy` operates inside the Kubernetes network layer, where DNAT has
+already resolved ClusterIPs to real pod IPs. A NetworkPolicy egress rule can
+specify `podSelector`, `namespaceSelector`, or `ipBlock` against actual pod
+addresses — the virtual service CIDR is never involved. This restores fine-grained
+egress enforcement that SGs cannot provide on Fargate:
+
+```yaml
+# Example: restrict an iss-tracker pod to only reach CoreDNS and DynamoDB
+egress:
+  - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+    ports:
+      - protocol: UDP
+        port: 53
+  - to:
+      - ipBlock:
+          cidr: 10.0.128.0/18   # intra subnets — VPC endpoints
+    ports:
+      - protocol: TCP
+        port: 443
+```
+
+This is why NetworkPolicy is listed as a required secure-baseline control, not
+optional cleanup. The SG model on Fargate makes it the only layer capable of
+enforcing egress access control at per-service or per-pod granularity.
+
+**Layer summary:**
+
+| Layer | Granularity | Fargate egress gap? |
+|-------|-------------|---------------------|
+| Security group egress | Service CIDR only (all services indistinguishable) | Yes — enforces "can use services" only |
+| NACL | Subnet tier (post-DNAT IP ranges) | No gap — but only subnet-granularity |
+| NetworkPolicy | Per-pod, per-namespace, per-port | No gap — operates post-DNAT |
+| Security group ingress | Per-source-SG or per-source-CIDR | No gap — destination sees real source IP |
+
 ### NACL rules on Fargate
 
 NACLs behave the same as on EC2 nodes — they only see real VPC addresses.
