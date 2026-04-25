@@ -3,7 +3,6 @@
 Patterns, anti-patterns, and constraints for CI/CD in this project.
 
 **Update this document when:**
-- ArgoCD goes live — update the manual operations table; add ArgoCD sync to the deploy workflow
 - A new workflow is added — update the CI workflow table
 - The branch strategy changes
 - The core CI/CD constraint is revisited (e.g., if the repo moves to private)
@@ -56,7 +55,10 @@ All deployment and infrastructure operations are performed manually:
 |-----------|-----|-----|
 | Container image build + push | Developer | Local or bastion, manual |
 | Terraform apply | Developer | Local or bastion |
-| Helm install / upgrade | Developer | Bastion via `helmwrap.sh` |
+| Secrets Manager entries (ECR URL, IRSA ARN) | Developer | `aws secretsmanager create-secret` — required before ArgoCD bootstrap |
+| ArgoCD Application sync | ArgoCD | Automatic on `develop` push (selfHeal) |
+| ArgoCD bootstrap (new cluster) | Developer | Bastion via `k8s/argocd/apps/deploy.sh` |
+| Helm install / upgrade (emergency) | Developer | Bastion via `helmwrap.sh` |
 | kubectl operations | Developer | Bastion |
 
 ---

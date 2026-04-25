@@ -130,31 +130,64 @@ module "vpc" {
   intra_subnets               = ["10.0.51.0/24", "10.0.52.0/24", "10.0.53.0/24"]
   intra_dedicated_network_acl = true
   intra_inbound_acl_rules = [
+    # Scoped to private_subnets_aggregate (10.0.0.0/22) rather than vpc_cidr —
+    # only the private tier legitimately communicates with intra tier resources
+    # (CoreDNS, VPC endpoints). Public subnets must not have a NACL-permitted
+    # path into the intra tier.
     {
       rule_number = "100"
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = "443"
       to_port     = "443"
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
-    # DNS TCP
+    # Intra-to-intra HTTPS — pods reaching the API server control plane ENI or
+    # VPC endpoints in other intra subnets (LB controller, leader election, webhooks).
+    # Uses intra_subnets_aggregate (10.0.48.0/21) — see main.tf locals for rationale.
+    {
+      rule_number = "101"
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = "443"
+      to_port     = "443"
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # DNS TCP — from private subnet pods
     {
       rule_number = "110"
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = "53"
       to_port     = "53"
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
-    # DNS UDP
+    # DNS TCP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = "111"
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = "53"
+      to_port     = "53"
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # DNS UDP — from private subnet pods
     {
       rule_number = "120"
       rule_action = "allow"
       protocol    = "udp"
       from_port   = "53"
       to_port     = "53"
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
+    },
+    # DNS UDP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = "121"
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = "53"
+      to_port     = "53"
+      cidr_block  = local.intra_subnets_aggregate
     },
     # UDP ephemeral return traffic — VPC DNS resolver (10.0.0.2) responds to
     # CoreDNS forwarded queries with UDP from port 53 to CoreDNS's ephemeral
@@ -166,16 +199,26 @@ module "vpc" {
       protocol    = "udp"
       from_port   = "1024"
       to_port     = "65535"
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
-    # Ephemeral ports from VPC (return traffic from VPC endpoints)
+    # UDP ephemeral return traffic — intra-to-intra (CoreDNS responses to kube-system
+    # pods in other intra subnets, and other intra-to-intra UDP return traffic)
+    {
+      rule_number = "126"
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = "1024"
+      to_port     = "65535"
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # Ephemeral ports — return traffic from VPC endpoints to private subnet pods
     {
       rule_number = "130"
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = "1024"
       to_port     = "65535"
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
     # 0.0.0.0/0 is intentional. Return traffic from S3 layer downloads arrives
     # from public S3 IPs via the S3 gateway endpoint. Same reasoning as the
@@ -198,7 +241,7 @@ module "vpc" {
       to_port     = -1
       icmp_type   = 3
       icmp_code   = -1 # -1 = all codes under type 3
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
     # ICMP type 8 — Echo Request (ping inbound)
     {
@@ -209,7 +252,7 @@ module "vpc" {
       to_port     = -1
       icmp_type   = 8
       icmp_code   = -1
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
     # ICMP type 0 — Echo Reply (ping outbound)
     {
@@ -220,16 +263,16 @@ module "vpc" {
       to_port     = -1
       icmp_type   = 0
       icmp_code   = -1
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
-    # API traffic from load balancer in public subnets
+    # API traffic — scoped to private subnets (API pods run in private tier)
     {
       rule_number = 180
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 8000
       to_port     = 8000
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
   ]
   intra_outbound_acl_rules = [
@@ -252,44 +295,82 @@ module "vpc" {
       to_port     = 443
       cidr_block  = "0.0.0.0/0"
     },
-    # DNS TCP
+    # DNS TCP — to private subnet pods
     {
       rule_number = 110
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 53
       to_port     = 53
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
-    # DNS UDP
+    # DNS TCP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = 111
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # DNS UDP — to private subnet pods
     {
       rule_number = 120
       rule_action = "allow"
       protocol    = "udp"
       from_port   = 53
       to_port     = 53
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
-    # Ephemeral return traffic (TCP)
+    # DNS UDP — intra-to-intra (kube-system pods querying CoreDNS in other intra subnets)
+    {
+      rule_number = 121
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = 53
+      to_port     = 53
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # Ephemeral return traffic (TCP) — to private subnet pods only
     {
       rule_number = 130
       rule_action = "allow"
       protocol    = "tcp"
       from_port   = 1024
       to_port     = 65535
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
-    # Ephemeral return traffic (UDP) — required for CoreDNS UDP responses back
-    # to pods in private subnets. DNS queries arrive on UDP 53; responses leave
-    # from port 53 to the client's ephemeral port. NACLs are stateless so this
-    # outbound rule is required even though the inbound query was permitted.
+    # Ephemeral return traffic (UDP) — CoreDNS UDP responses back to private
+    # subnet pods. DNS queries arrive on UDP 53; responses leave from port 53
+    # to the client's ephemeral port. NACLs are stateless so this outbound
+    # rule is required even though the inbound query was permitted.
     {
       rule_number = 135
       rule_action = "allow"
       protocol    = "udp"
       from_port   = 1024
       to_port     = 65535
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
+    },
+    # Ephemeral return traffic (TCP) — intra-to-intra (API server ENI → webhook pods,
+    # LB controller → API server, etc.)
+    {
+      rule_number = 136
+      rule_action = "allow"
+      protocol    = "tcp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = local.intra_subnets_aggregate
+    },
+    # Ephemeral return traffic (UDP) — intra-to-intra (CoreDNS responses to kube-system
+    # pods in other intra subnets). NACLs are stateless; rule 135 only covers private subnets.
+    {
+      rule_number = 141
+      rule_action = "allow"
+      protocol    = "udp"
+      from_port   = 1024
+      to_port     = 65535
+      cidr_block  = local.intra_subnets_aggregate
     },
     # ICMP type 3 — Destination Unreachable (Path MTU Discovery)
     {
@@ -300,7 +381,7 @@ module "vpc" {
       to_port     = -1
       icmp_type   = 3
       icmp_code   = -1
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
     # ICMP type 0 — Echo Reply (ping outbound)
     {
@@ -311,7 +392,7 @@ module "vpc" {
       to_port     = -1
       icmp_type   = 0
       icmp_code   = -1
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
     # ICMP type 8 — Echo Request (ping outbound)
     {
@@ -322,7 +403,7 @@ module "vpc" {
       to_port     = -1
       icmp_type   = 8
       icmp_code   = -1
-      cidr_block  = local.vpc_cidr
+      cidr_block  = local.private_subnets_aggregate
     },
   ]
   public_subnets               = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]

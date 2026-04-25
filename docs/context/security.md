@@ -4,7 +4,6 @@ Security principles, controls by layer, and iteration sequence for this project.
 
 **Update this document when:**
 - Container security hardening is complete — move the secure baseline planned items to current baseline
-- ESO is in place — add secrets management pattern to the identity and access controls section
 - A new security principle or anti-pattern is established
 - The security iteration sequence changes
 
@@ -53,6 +52,9 @@ accumulates permissions beyond its function.
 - Trust policies use `StringEquals` on exact namespace and service account name
 - Permission boundaries on all roles with IAM write permissions
 - No long-lived AWS credentials anywhere in the system
+- Sensitive Helm values (ECR URLs, IRSA ARNs) stored in AWS Secrets Manager;
+  External Secrets Operator surfaces them as native K8s secrets in the cluster.
+  ESO IRSA role is scoped to `secretsmanager:GetSecretValue` on `iss-tracker/*` only.
 
 **CI/CD**
 - GitHub Actions does not have AWS credentials or cluster access. This project
@@ -105,3 +107,9 @@ Runtime-level controls layered on top: source and container image scanning,
   Helm values — use projected IRSA tokens or External Secrets Operator
 - **Never expose the Kubernetes API server publicly** — EKS endpoint is
   private-only; all kubectl access is via bastion
+- **Never use `vpc_cidr` in intra-tier NACL rules** — the VPC CIDR includes
+  public subnets, which must not have a NACL-permitted path into the intra tier.
+  Scope NACL rules to the specific subnet-tier CIDRs that legitimately originate
+  the traffic (e.g., private subnet CIDRs for private → intra DNS). Using the
+  full VPC CIDR defeats the defense-in-depth model where each subnet tier has
+  distinct trust boundaries.

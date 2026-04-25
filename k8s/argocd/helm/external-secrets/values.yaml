@@ -1,0 +1,274 @@
+# ---------------------------------------------------------------------------
+# External Secrets Operator Helm values
+# ---------------------------------------------------------------------------
+#
+# Chart:         external-secrets
+# Chart repo:    https://charts.external-secrets.io
+# Chart version: 2.4.0
+# AppVersion:    v2.4.0
+#
+# ESO is a cluster-wide controller that reconciles ExternalSecret and
+# ClusterSecretStore CRDs. It reads sensitive values from AWS Secrets Manager
+# and writes them as native Kubernetes Secrets for workloads to consume.
+#
+# Runs in the argocd namespace alongside ArgoCD — same Fargate profile and
+# security group. Reaches Secrets Manager via the VPC endpoint (no internet
+# egress required).
+#
+# IRSA trust policy is scoped to argocd:external-secrets. The role ARN is
+# injected at install time via helmwrap.sh — not stored here.
+#
+# Install:
+#   cd k8s/argocd/helm/external-secrets
+#   ./helmwrap.sh install
+#
+# Resolve image digest before install:
+#   docker pull ghcr.io/external-secrets/external-secrets:v2.4.0
+#   docker inspect --format='{{index .RepoDigests 0}}' \
+#     ghcr.io/external-secrets/external-secrets:v2.4.0
+# ---------------------------------------------------------------------------
+
+nameOverride: "external-secrets"
+fullnameOverride: "external-secrets"
+
+replicaCount: 1
+
+revisionHistoryLimit: 10
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: ghcr.io/external-secrets/external-secrets
+  pullPolicy: IfNotPresent
+  # Pin to digest. Tag retained for readability; digest is the enforceable
+  # identifier. Replace placeholder before install.
+  tag: "v2.4.0@sha256:d2b74514f63f5b55360d08351f1fe5af3b1db794a81fa10389abe2ff2999c566"
+
+imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# CRDs
+# ---------------------------------------------------------------------------
+installCRDs: true
+
+crds:
+  createClusterExternalSecret: true
+  createClusterSecretStore: true
+  createSecretStore: true
+  createClusterGenerator: true
+  createClusterPushSecret: true
+  createPushSecret: true
+  annotations: {}
+  conversion:
+    # Disabled alongside webhook and certController — conversion webhook is
+    # not needed since v1alpha1 is no longer supported.
+    enabled: false
+
+# ---------------------------------------------------------------------------
+# Service account
+# ---------------------------------------------------------------------------
+# Name must match the IRSA trust policy in iam-controllers.tf:
+#   system:serviceaccount:argocd:external-secrets
+# IRSA role ARN annotation is injected at install time via helmwrap.sh.
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: "external-secrets"
+
+rbac:
+  create: true
+  servicebindings:
+    create: true
+  aggregateToView: true
+  aggregateToEdit: true
+
+# ---------------------------------------------------------------------------
+# Pod security context (pod-level)
+# ---------------------------------------------------------------------------
+podSecurityContext:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Container security context
+# ---------------------------------------------------------------------------
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  enabled: true
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# Scheduling — explicit empty values document the decision and keep the
+# structure in place for mixed-mode clusters.
+# ---------------------------------------------------------------------------
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+
+# ---------------------------------------------------------------------------
+# Probes — disabled at functional baseline; enable during secure baseline.
+# ---------------------------------------------------------------------------
+livenessProbe:
+  enabled: false
+
+readinessProbe:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Metrics / monitoring — disabled; no Prometheus in this cluster.
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: false
+
+metrics:
+  listen:
+    port: 8080
+  service:
+    enabled: false
+
+# ---------------------------------------------------------------------------
+# Webhook component
+# ---------------------------------------------------------------------------
+webhook:
+  # Disabled: ESO cert controller generates certs scoped to Fargate node DNS
+  # names, not the webhook service DNS name, causing x509 validation failures
+  # on the API server's webhook call. ESO functions without the webhook —
+  # CRD validation moves from admission time to reconciliation time.
+  create: false
+  replicaCount: 1
+  revisionHistoryLimit: 10
+  failurePolicy: Fail
+
+  image:
+    repository: ghcr.io/external-secrets/external-secrets
+    pullPolicy: IfNotPresent
+    tag: "v2.4.0@sha256:d2b74514f63f5b55360d08351f1fe5af3b1db794a81fa10389abe2ff2999c566"
+
+  imagePullSecrets: []
+
+  serviceAccount:
+    create: true
+    automount: true
+    annotations: {}
+    name: "external-secrets-webhook"
+
+  podSecurityContext:
+    enabled: true
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    enabled: true
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+  service:
+    enabled: true
+    type: ClusterIP
+
+  metrics:
+    listen:
+      port: 8080
+    service:
+      enabled: false
+
+# ---------------------------------------------------------------------------
+# Cert controller component
+# ---------------------------------------------------------------------------
+certController:
+  # Disabled alongside webhook — cert controller manages TLS certs for the
+  # webhook only and has nothing to reconcile when webhook.create is false.
+  create: false
+  replicaCount: 1
+  revisionHistoryLimit: 10
+
+  image:
+    repository: ghcr.io/external-secrets/external-secrets
+    pullPolicy: IfNotPresent
+    tag: "v2.4.0@sha256:d2b74514f63f5b55360d08351f1fe5af3b1db794a81fa10389abe2ff2999c566"
+
+  imagePullSecrets: []
+
+  rbac:
+    create: true
+
+  serviceAccount:
+    create: true
+    automount: true
+    annotations: {}
+    name: "external-secrets-cert-controller"
+
+  podSecurityContext:
+    enabled: true
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    enabled: true
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+  metrics:
+    listen:
+      port: 8080
+    service:
+      enabled: false

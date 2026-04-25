@@ -1,0 +1,386 @@
+# ---------------------------------------------------------------------------
+# ArgoCD Helm values
+# ---------------------------------------------------------------------------
+#
+# Chart:        argo-cd
+# Chart repo:   https://argoproj.github.io/argo-helm (official argoproj chart)
+# Chart version: 9.5.4
+# AppVersion:   v3.3.8
+#
+# Install:
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm repo update argo
+#   helm install argocd argo/argo-cd --version 9.5.4 \
+#     -n argocd -f ./values.yaml
+#
+# The namespace is supplied via `helm -n argocd` at install time, not via
+# values.yaml - Helm scopes all namespaced resources to the install namespace
+# and there is no chart-level namespace field.
+#
+# Design intent:
+#   - Security-relevant and scheduling-relevant settings are set explicitly
+#     even when they match chart defaults. The goal is to keep these surfaces
+#     visible in one place so future hardening is a value flip, not a
+#     structural change.
+#   - The cluster is private and the ArgoCD UI is not exposed. CLI access is
+#     via `kubectl port-forward` from the bastion.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Release identity
+# ---------------------------------------------------------------------------
+# Pins resource names so they do not depend on the Helm release name.
+nameOverride: "argocd"
+fullnameOverride: "argocd"
+
+# ---------------------------------------------------------------------------
+# Global - image, securityContext, scheduling defaults applied to every
+# component unless a per-component override is set below.
+# ---------------------------------------------------------------------------
+global:
+  image:
+    repository: quay.io/argoproj/argocd
+    # Pin to digest. Tag is retained for human readability; the digest is the
+    # enforceable identifier. Resolve with:
+    #   docker pull quay.io/argoproj/argocd:v3.3.8
+    #   docker inspect --format='{{index .RepoDigests 0}}' quay.io/argoproj/argocd:v3.3.8
+    # Replace the placeholder before install.
+    tag: "v3.3.8@sha256:5d45dc6db21db32a0638ac9128462c6d9956a90fc81760146dada5a243ff7516"
+    imagePullPolicy: IfNotPresent
+
+  # No private registry in use - ArgoCD images are pulled from public quay.io.
+  # ECR is only used for iss-tracker application images.
+  imagePullSecrets: []
+
+  # Pod-level security context. Applied to every ArgoCD pod.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+
+  # No priorityClass defined in this cluster - explicit empty documents the
+  # decision.
+  priorityClassName: ""
+
+  # Scheduling defaults. Fargate ignores nodeSelector/tolerations/affinity,
+  # but declaring them explicitly documents intent and keeps the structure
+  # in place for future mixed-mode clusters.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+  # Labels/annotations applied to every ArgoCD pod. Reserved for future
+  # NetworkPolicy selectors and audit annotations.
+  podLabels: {}
+  podAnnotations: {}
+
+  # Container-level security context. Applied to every container in every
+  # ArgoCD pod.
+  # NOTE: readOnlyRootFilesystem requires per-component emptyDir volumes for
+  # scratch paths (repoServer writes to /tmp, controller to /home/argocd).
+  # Chart defaults handle these when readOnlyRootFilesystem is true.
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+  # NetworkPolicy - scaffolded disabled so the hardening path is a value flip,
+  # not a structural change. Chart ships per-component default policies that
+  # allow required intra-ArgoCD traffic + egress to Git/K8s API. Flip to true
+  # during Phase 2 secure baseline.
+  networkPolicy:
+    create: false
+    defaultDenyIngress: false
+
+# ---------------------------------------------------------------------------
+# configs - ArgoCD-internal configuration (not Kubernetes RBAC).
+# These populate the argocd-cm, argocd-rbac-cm, argocd-secret, and argocd-cmd-
+# params-cm ConfigMaps/Secret that ArgoCD reads at runtime.
+# ---------------------------------------------------------------------------
+configs:
+  # argocd-cm - general ArgoCD config. Defaults are acceptable for now;
+  # keyed off explicitly so hardening lands here later (resource.exclusions,
+  # application.instanceLabelKey, repository credentials templates).
+  cm:
+    create: true
+    # Disable the built-in local admin account once SSO is configured.
+    # Kept enabled for bootstrap; flip to false after dex/OIDC is wired.
+    admin.enabled: true
+    # Reject unknown/invalid fields on Application manifests instead of
+    # silently ignoring them.
+    application.resourceTrackingMethod: annotation
+
+  # argocd-rbac-cm - ArgoCD's application-level RBAC policy engine.
+  # This governs what a logged-in ArgoCD user can do (sync apps, view logs),
+  # distinct from Kubernetes RBAC which governs what ArgoCD's service account
+  # can do in the cluster.
+  rbac:
+    create: true
+    policy.default: "role:readonly"
+    # Explicit empty CSV - future SSO group bindings land here.
+    policy.csv: ""
+    scopes: "[groups]"
+
+  # argocd-cmd-params-cm - controller/server/repo-server runtime flags.
+  params:
+    create: true
+    # Do not disable auth. Explicit even though default is false.
+    server.disable.auth: false
+    # Enforce strict TLS between repo-server and controller.
+    controller.repo.server.strict.tls: false
+    # Conservative parallelism for Fargate (small pods, no burst capacity).
+    reposerver.parallelism.limit: 0
+
+  # argocd-secret - admin password bootstrap, webhook secrets, dex secrets.
+  # createSecret: true lets the chart create the initial admin password.
+  # Flip to false in Phase 3 once ESO manages this secret.
+  secret:
+    createSecret: true
+
+  # Disable the built-in TLS certs ConfigMap - no external Git repos over
+  # self-signed TLS in use.
+  tls:
+    create: true
+
+# ---------------------------------------------------------------------------
+# RBAC - Kubernetes RBAC for ArgoCD's own service accounts.
+# Distinct from configs.rbac (ArgoCD's app-level RBAC) above.
+# ---------------------------------------------------------------------------
+# The chart creates Role/ClusterRole + bindings per component by default.
+# Each component has its own `rbac.create` flag below; kept as chart defaults
+# which are already least-privilege per component.
+
+# ---------------------------------------------------------------------------
+# Application controller - reconciles Application CRs against the cluster.
+# ---------------------------------------------------------------------------
+controller:
+  replicas: 1
+
+  serviceAccount:
+    create: true
+    name: argocd-application-controller
+    automountServiceAccountToken: true
+    annotations: {}
+
+  # Fargate-appropriate sizing. Controller is the heaviest component.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  pdb:
+    enabled: false
+
+  # Per-component scheduling overrides - empty means inherit from global.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# ---------------------------------------------------------------------------
+# Repo server - fetches Git repos and renders manifests (helm template,
+# kustomize build). This is the component that needs internet egress.
+# ---------------------------------------------------------------------------
+repoServer:
+  replicas: 1
+
+  serviceAccount:
+    create: true
+    name: argocd-repo-server
+    automountServiceAccountToken: false
+    annotations: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  pdb:
+    enabled: false
+
+  autoscaling:
+    enabled: false
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# ---------------------------------------------------------------------------
+# Server - API server and web UI.
+# UI is NOT exposed. Access is ClusterIP + kubectl port-forward from bastion.
+# ---------------------------------------------------------------------------
+server:
+  replicas: 1
+
+  serviceAccount:
+    create: true
+    name: argocd-server
+    automountServiceAccountToken: true
+    annotations: {}
+
+  # --insecure terminates TLS at the ALB/port-forward layer. Required because
+  # we are not issuing a server cert for localhost port-forward access.
+  extraArgs:
+    - --insecure
+
+  service:
+    type: ClusterIP
+
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  pdb:
+    enabled: false
+
+  autoscaling:
+    enabled: false
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+  # Disable server extensions until a specific one is needed.
+  extensions:
+    enabled: false
+
+  # Prometheus metrics scraping - off until the cluster has a Prometheus stack.
+  metrics:
+    enabled: false
+    serviceMonitor:
+      enabled: false
+
+# ---------------------------------------------------------------------------
+# ApplicationSet controller - generates Applications from templates (e.g.,
+# Git directory or list generators). Enabled for future App-of-Apps pattern.
+# ---------------------------------------------------------------------------
+applicationSet:
+  enabled: true
+  replicas: 1
+
+  serviceAccount:
+    create: true
+    name: argocd-applicationset-controller
+    automountServiceAccountToken: true
+    annotations: {}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  pdb:
+    enabled: false
+
+  metrics:
+    enabled: false
+    serviceMonitor:
+      enabled: false
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# ---------------------------------------------------------------------------
+# Notifications controller - disabled, no notification targets configured yet.
+# Image pinned explicitly so enabling notifications later doesn't pull latest.
+# ---------------------------------------------------------------------------
+notifications:
+  enabled: false
+  image:
+    repository: quay.io/argoproj/argocd
+    tag: "v3.3.8@sha256:REPLACE_WITH_DIGEST"
+    imagePullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# Dex (SSO) - disabled until OIDC provider is chosen.
+# Image pinned explicitly so enabling dex later doesn't pull latest.
+# ---------------------------------------------------------------------------
+dex:
+  enabled: false
+  image:
+    repository: ghcr.io/dexidp/dex
+    # Resolve: docker pull ghcr.io/dexidp/dex:v2.45.1
+    #   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/dexidp/dex:v2.45.1
+    tag: "v2.45.1@sha256:REPLACE_WITH_DIGEST"
+    imagePullPolicy: IfNotPresent
+  # initImage uses global.image (quay.io/argoproj/argocd) - covered by global.image above.
+
+# ---------------------------------------------------------------------------
+# Redis - in-memory cache for ArgoCD state. Bundled chart default is a
+# single-replica Redis. Sufficient for dev; re-evaluate for prod.
+# ---------------------------------------------------------------------------
+redis:
+  enabled: true
+
+  image:
+    repository: ecr-public.aws.com/docker/library/redis
+    # Resolve: docker pull ecr-public.aws.com/docker/library/redis:8.2.3-alpine
+    #   docker inspect --format='{{index .RepoDigests 0}}' ecr-public.aws.com/docker/library/redis:8.2.3-alpine
+    tag: "8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba"
+    imagePullPolicy: IfNotPresent
+
+  # Redis metrics exporter - disabled. Pinned for when metrics are enabled.
+  metrics:
+    enabled: false
+    image:
+      repository: ghcr.io/oliver006/redis_exporter
+      # Resolve digest before enabling metrics.
+      tag: "v1.82.0@sha256:REPLACE_WITH_DIGEST"
+      imagePullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+    annotations: {}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+# HA Redis (multi-replica + sentinel). Off for dev.
+redis-ha:
+  enabled: false

@@ -1,0 +1,20 @@
+# SecurityGroupPolicy — argocd namespace
+#
+# Assigns the argocd SG to all pods in the argocd namespace. On Fargate, the
+# assigned SG REPLACES the cluster SG on the pod's branch ENI — it does not
+# augment it. The argocd SG includes all rules pods need: cluster control plane
+# ingress, intra-component traffic, DNS, and internet egress via NAT.
+#
+# Do not apply this file directly. Use bootstrap-install.sh, which resolves
+# ARGOCD_SG_ID from the Terraform output and substitutes it via envsubst.
+apiVersion: vpcresources.k8s.aws/v1beta1
+kind: SecurityGroupPolicy
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  podSelector:
+    matchLabels: {}  # empty selector matches all pods in the namespace
+  securityGroups:
+    groupIds:
+      - ${ARGOCD_SG_ID}
