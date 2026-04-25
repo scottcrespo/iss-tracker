@@ -3,6 +3,7 @@
 # ---------------------------------------------------------------------------
 #
 # Proxies SSH connections to the bastion over the instance's private IP.
+# No public IP is required on the bastion host.
 # No public IP, no inbound internet port, no pre-registered SSH keys.
 #
 # The EICE SG and its egress rule are gated by var.create_eice_security_group.
