@@ -15,6 +15,12 @@ A full-stack cloud-native application that tracks the real-time position of the 
   - [VPC Endpoints](#vpc-endpoints)
   - [IAM / IRSA](#iam--irsa)
   - [CI/CD](#cicd)
+- [Security Posture](#security-posture)
+  - [Infrastructure Layer](#infrastructure-layer)
+  - [Container Layer](#container-layer)
+  - [Kubernetes Runtime Controls](#kubernetes-runtime-controls)
+  - [CI Security Scanning](#ci-security-scanning)
+  - [Hardening Scope and Limitations](#hardening-scope-and-limitations)
 - [Repository Structure](#repository-structure)
 - [Current State](#current-state)
 - [To Do](#to-do)
@@ -71,7 +77,7 @@ Both applications run as containers on EKS Fargate inside a private VPC. All AWS
 
 **IAM policy content is always caller-defined.** Terraform modules provision IAM role structure; the calling root module supplies all policy documents. No module in this codebase defines what an identity is allowed to do.
 
-**Container security hardening is scoped to first-party workloads.** The `api` and `poller` pods comply with Kubernetes Pod Security Standards Restricted level: `runAsNonRoot`, `readOnlyRootFilesystem`, `capabilities.drop: ALL`, `seccompProfile: RuntimeDefault` at container level, `automountServiceAccountToken: false`. Third-party components (ArgoCD, ESO, LB controller, CoreDNS) are explicitly out of scope — their security posture is maintained upstream and must be re-validated on every chart upgrade. NetworkPolicy enforcement is not achievable on EKS Fargate; the vpc-cni eBPF agent requires host kernel access unavailable in Fargate's managed microVM model. Network isolation relies on SGs, NACLs, and VPC endpoint routing instead.
+**Container security hardening is scoped to first-party workloads.** The `api` and `poller` pods are hardened to Kubernetes Pod Security Standards Restricted level. Third-party components (ArgoCD, ESO, LB controller, CoreDNS) are explicitly out of scope — their security posture is maintained upstream and must be re-validated on every chart upgrade. See [Security Posture](#security-posture) for the full control inventory.
 
 **Decisions are documented.** Every non-obvious architectural choice has a corresponding decision document explaining the tradeoff, the alternatives considered, and why the chosen approach is correct for this context. See [docs/decisions/](docs/decisions/).
 
@@ -155,6 +161,89 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 
 ---
 
+## Security Posture
+
+Security controls are applied across four layers: infrastructure, container image, Kubernetes runtime, and CI scanning. This section inventories what is enforced, at which layer, and where to find the supporting documentation.
+
+### Infrastructure Layer
+
+| Control | Implementation |
+|---------|---------------|
+| Private cluster endpoint | EKS API server has no public endpoint; all kubectl access via bastion and EC2 Instance Connect Endpoint |
+| Private compute | All pods run in private or intra subnets; no public IPs assigned to any compute resource |
+| Subnet-tier isolation | Three tiers: intra (no internet), private (NAT egress only), public (ALB only); enforced by routing and explicit NACLs |
+| VPC endpoints | All AWS service traffic (ECR, DynamoDB, STS, CloudWatch, EKS) stays within the VPC via interface and gateway endpoints |
+| Per-namespace security groups | `SecurityGroupPolicy` assigns least-privilege SGs to `iss-tracker` and `argocd` pods; ingress rules enforce pod-level isolation |
+| No long-lived credentials | IRSA binds pod identity to IAM roles via OIDC federation; no static AWS credentials anywhere in the system |
+| Secrets management | Sensitive values stored in AWS Secrets Manager; surfaced into the cluster by External Secrets Operator; never committed to Git |
+
+**Limitation:** Native Kubernetes NetworkPolicy is not enforceable on EKS Fargate. The vpc-cni eBPF enforcement agent requires privileged host kernel access unavailable in Fargate's managed microVM model. Per-pod egress control at service granularity is not achievable with the standard Kubernetes networking stack on this cluster. See [Fargate networking deep dive](docs/lessons-learned/fargate-networking-deep-dive.md).
+
+### Container Layer
+
+| Control | Implementation |
+|---------|---------------|
+| Non-root user | `appuser` created with deterministic UID 1000 in both Dockerfiles; `USER appuser` set before entrypoint |
+| No runtime bytecode writes | `ENV PYTHONDONTWRITEBYTECODE=1` prevents Python from writing `__pycache__` to the source directory at runtime |
+| Immutable image references | All image references use SHA256 digest — `repository@sha256:<digest>`; no floating tags in production |
+| Minimal base image | `python:3.12-slim`; OS packages upgraded at build time; no package cache retained |
+
+### Kubernetes Runtime Controls
+
+Applied to `api` (Deployment) and `poller` (CronJob). These settings together satisfy the Kubernetes [Pod Security Standards Restricted](https://kubernetes.io/docs/concepts/security/pod-security-standards/) policy level.
+
+**Pod-level `securityContext`:**
+
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `runAsNonRoot` | `true` | Kubernetes rejects the pod if the container image would run as root |
+| `runAsUser` | `1000` | Explicit UID — matches `appuser` in the Dockerfile |
+| `runAsGroup` | `1000` | Primary GID for the process |
+| `fsGroup` | `1000` | Volume ownership GID — files written to mounted volumes get this group |
+
+**Container-level `securityContext`:**
+
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `allowPrivilegeEscalation` | `false` | Process cannot gain more privileges than its parent |
+| `readOnlyRootFilesystem` | `true` | Root filesystem is read-only; writes go to explicitly declared tmpfs volumes |
+| `capabilities.drop` | `["ALL"]` | All Linux capabilities removed; none added back (neither application requires any) |
+| `privileged` | `false` | No access to host devices or kernel features |
+| `seccompProfile.type` | `RuntimeDefault` | Syscall filtering via the container runtime's default allowlist; applied at container level only to avoid affecting any injected sidecars |
+
+**Service account:**
+
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `automountServiceAccountToken` | `false` | Default Kubernetes SA token not mounted; IRSA projected token is injected independently by the EKS pod identity webhook and is unaffected |
+
+**tmpfs volumes:** Both `api` and `poller` mount an in-memory `emptyDir` at `/tmp` to provide a writable scratch space without relaxing the read-only root filesystem.
+
+### CI Security Scanning
+
+| Tool | Scope | Trigger |
+|------|-------|---------|
+| [Trivy](https://github.com/aquasecurity/trivy) | Container image vulnerability scanning | App CI workflows |
+| [Checkov](https://www.checkov.io/) | Terraform static analysis — misconfigurations and policy violations | Terraform CI workflows |
+| [tfsec](https://github.com/aquasecurity/tfsec) | Terraform security scanning | Terraform CI workflows |
+
+Checkov and tfsec findings must be resolved or explicitly suppressed with documented rationale before merging. Suppressions use inline `#checkov:skip` comments with justification.
+
+### Hardening Scope and Limitations
+
+**In scope:** `api` and `poller` first-party applications only.
+
+**Explicitly out of scope:** ArgoCD, ESO, AWS Load Balancer Controller, CoreDNS. Third-party components maintain their own security posture upstream. Taking full ownership of third-party Helm chart internals requires deep per-chart knowledge and must be re-validated on every upgrade — the portfolio signal from hardening first-party applications is equivalent without that operational cost.
+
+**NetworkPolicy not supported on EKS Fargate.** See [Fargate security posture conclusions](docs/lessons-learned/fargate-networking-deep-dive.md#fargate-security-posture-conclusions) for a full analysis of this limitation and its implications, including the Istio service mesh tradeoff and the compensating role of Fargate's microVM isolation.
+
+**Further reading:**
+- [Container runtime hardening plan](docs/plan-examples/container-runtime-hardening.md) — implementation plan with phased delivery, sequencing rationale, and verification steps
+- [Security context doc](docs/context/security.md) — controls by layer, iteration sequence, anti-patterns
+- [Fargate networking deep dive](docs/lessons-learned/fargate-networking-deep-dive.md) — branch ENI model, pre-DNAT SG evaluation, NetworkPolicy findings, security posture conclusions
+
+---
+
 ## Repository Structure
 
 ```
@@ -163,11 +252,15 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 │   ├── api/                    # FastAPI application
 │   └── poller/                 # ISS position poller
 ├── docs/
-│   └── decisions/              # Architecture decision records
-│       ├── terraform/
-│       ├── k8s/
-│       ├── apps/
-│       └── cicd/
+│   ├── decisions/              # Architecture decision records
+│   │   ├── terraform/
+│   │   ├── k8s/
+│   │   ├── apps/
+│   │   └── cicd/
+│   ├── context/                # Domain context docs (AWS, Terraform, K8s, security, CI/CD)
+│   ├── lessons-learned/        # Debugging post-mortems and operational findings
+│   ├── plan-examples/          # Committed implementation plan examples (portfolio artifacts)
+│   └── runbooks/               # Operational runbooks for cluster lifecycle procedures
 ├── k8s/
 │   ├── argocd/                 # Namespace: argocd
 │   │   ├── apps/               # ArgoCD Application manifests + deploy.sh
