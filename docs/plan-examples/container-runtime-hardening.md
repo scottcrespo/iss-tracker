@@ -107,13 +107,21 @@ is the enforcement mechanism; RBAC is irrelevant when no credential is presented
 
 ### NetworkPolicy
 
-| Setting | api | poller | Current state | Phase |
-|---------|-----|--------|---------------|-------|
-| Default-deny ingress | ❌ | ❌ | No NetworkPolicy exists | 1 |
-| Default-deny egress | ❌ | ❌ | No NetworkPolicy exists | 1 |
-| Ingress TCP 8000 from VPC | ❌ | n/a | No NetworkPolicy exists | 1 |
-| Egress UDP/TCP 53 (DNS) | ❌ | ❌ | No NetworkPolicy exists | 1 |
-| Egress TCP 443 to `0.0.0.0/0` | ❌ | ❌ | No NetworkPolicy exists | 1 |
+**Not supported on EKS Fargate.** Native Kubernetes NetworkPolicy enforcement
+requires the vpc-cni eBPF agent, which needs privileged host kernel access. On
+Fargate, each pod runs in its own managed microVM with no accessible host. There
+is no DaemonSet path and no mutating webhook for sidecar injection. NetworkPolicy
+objects are accepted by the API server and silently unenforced. Confirmed
+empirically: a default-deny policy applied to the `iss-tracker` namespace had no
+effect on ALB traffic. See `docs/lessons-learned/fargate-networking-deep-dive.md`.
+
+| Setting | api | poller | Current state |
+|---------|-----|--------|---------------|
+| Default-deny ingress | n/a | n/a | Not achievable on Fargate |
+| Default-deny egress | n/a | n/a | Not achievable on Fargate |
+| Ingress TCP 8000 from VPC | n/a | n/a | Not achievable on Fargate |
+| Egress UDP/TCP 53 (DNS) | n/a | n/a | Not achievable on Fargate |
+| Egress TCP 443 to `0.0.0.0/0` | n/a | n/a | Not achievable on Fargate |
 
 ---
 
@@ -124,53 +132,24 @@ is deliberate — each phase isolates one variable.
 
 ### Phase 1 — NetworkPolicy enforcement
 
-NetworkPolicy is implemented first because `seccompProfile: RuntimeDefault`
-filters syscalls at the kernel level. If NetworkPolicy and seccomp are applied
-simultaneously, a broken network policy could manifest as a seccomp violation
-(a blocked `connect()` or `sendto()` syscall), making it impossible to distinguish
-a policy misconfiguration from a seccomp false positive. Confirmed working
-NetworkPolicy is a prerequisite for clean seccomp debugging.
+**Eliminated. NetworkPolicy enforcement is not supported on EKS Fargate.**
 
-**Phase 1a — Enable enforcement on the cluster.**
+The original sequencing rationale placed NetworkPolicy first because a confirmed
+working NetworkPolicy baseline was needed before applying `seccompProfile:
+RuntimeDefault` — otherwise a broken egress rule could surface as a seccomp
+violation (both produce EPERM, making root-cause analysis impossible).
 
-EKS Fargate requires the `vpc-cni` managed addon with `enableNetworkPolicy: "true"`.
-The network policy agent is injected as a sidecar into each Fargate pod. Without
-this addon configuration, NetworkPolicy objects are accepted by the API server
-and silently unenforced — a false sense of security with no observable failure.
+This rationale is moot: NetworkPolicy cannot be enforced on Fargate regardless
+of the vpc-cni configuration. The vpc-cni `enableNetworkPolicy: "true"` addon
+setting uses eBPF, which requires privileged host kernel access. Fargate runs
+each pod in its own managed microVM with no accessible host — there is no
+DaemonSet path, no mutating webhook, and no sidecar injection mechanism. Setting
+`enableNetworkPolicy: "true"` on a Fargate-only cluster results in objects being
+silently unenforced. Confirmed empirically during implementation.
 
-Terraform change in `eks/eks.tf` addons block:
-
-```hcl
-vpc_cni = {
-  most_recent = true
-  configuration_values = jsonencode({
-    enableNetworkPolicy = "true"
-  })
-}
-```
-
-After `terraform apply`, existing pods must be restarted to receive the injected
-sidecar. Verify enforcement is active before writing any NetworkPolicy objects.
-
-**Phase 1b — Write and apply NetworkPolicy manifests.**
-
-Once enforcement is confirmed active, apply NetworkPolicy for api and poller.
-The presence of a NetworkPolicy selecting a pod establishes default-deny for all
-traffic not explicitly permitted. Explicit rules then open only required paths.
-
-**Known design decision: egress to `0.0.0.0/0` on port 443.**
-
-DynamoDB uses a gateway endpoint, not an interface endpoint. Gateway endpoint
-traffic routes via the route table to public DynamoDB IP ranges — not the intra
-subnet CIDRs (`10.0.128.0/18`) used for interface endpoints. A rule scoped to
-the intra subnet aggregate will not match DynamoDB traffic. This is the same class
-of behavior documented for S3 in `docs/lessons-learned/private-eks-fargate-debugging.md`.
-
-The chosen approach: allow TCP 443 egress to `0.0.0.0/0` and document the
-rationale inline. The SG and NACL layers provide the actual subnet-tier
-enforcement. NetworkPolicy's role here is default-deny for all other ports and
-protocols — the routing layer (NAT required for internet, no internet route from
-intra subnets) is the durable constraint for destination enforcement.
+The Phase 2a/2b sequencing is preserved independently: capabilities and seccomp
+are still applied in separate phases because they operate at different kernel
+layers and both produce EPERM on failure.
 
 ### Phase 2a — securityContext (without seccomp)
 
@@ -196,12 +175,14 @@ required capability was dropped before seccomp introduces a second filtering lay
 
 Applied last. Applied at the **container level only** — not at pod level.
 
-The aws-network-policy-agent sidecar injected by vpc-cni runs eBPF programs.
-The `bpf()` syscall is not in the Docker RuntimeDefault seccomp allowlist. If
-`seccompProfile: RuntimeDefault` is set at the pod level, it applies to all
-containers in the pod including the sidecar, silently breaking NetworkPolicy
-enforcement. Container-level application scopes the filter to the api/poller
-container only and leaves the sidecar's syscall surface unaffected.
+The original rationale for container-level scoping was to avoid breaking the
+vpc-cni network policy agent sidecar, which requires the `bpf()` syscall absent
+from RuntimeDefault. That concern is moot on Fargate — there is no sidecar.
+
+Container-level application is still the correct approach regardless: it is more
+targeted and explicit. Pod-level seccompProfile applies to all containers in the
+pod including any future injected sidecars; container-level application ensures
+the profile is scoped precisely to the workload container being hardened.
 
 ---
 

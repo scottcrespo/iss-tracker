@@ -377,37 +377,32 @@ NACL can enforce "pods in private subnets can reach pods in intra subnets on por
 distinguishes tiers but cannot distinguish services within a tier or pods within
 a subnet.
 
-**The correct compensation control is NetworkPolicy.**
+**The correct compensation control is NetworkPolicy — but NetworkPolicy enforcement
+is not supported on EKS Fargate.**
+
 `NetworkPolicy` operates inside the Kubernetes network layer, where DNAT has
 already resolved ClusterIPs to real pod IPs. A NetworkPolicy egress rule can
 specify `podSelector`, `namespaceSelector`, or `ipBlock` against actual pod
-addresses — the virtual service CIDR is never involved. This restores fine-grained
-egress enforcement that SGs cannot provide on Fargate:
+addresses — the virtual service CIDR is never involved. This would restore
+fine-grained egress enforcement that SGs cannot provide on Fargate.
 
-```yaml
-# Example: restrict an iss-tracker pod to only reach CoreDNS and DynamoDB
-egress:
-  - to:
-      - namespaceSelector:
-          matchLabels:
-            kubernetes.io/metadata.name: kube-system
-        podSelector:
-          matchLabels:
-            k8s-app: kube-dns
-    ports:
-      - protocol: UDP
-        port: 53
-  - to:
-      - ipBlock:
-          cidr: 10.0.128.0/18   # intra subnets — VPC endpoints
-    ports:
-      - protocol: TCP
-        port: 443
-```
+However, AWS does not support native Kubernetes NetworkPolicy enforcement on
+EKS Fargate. The vpc-cni `enableNetworkPolicy: "true"` addon setting uses eBPF,
+which requires privileged access to the host kernel. On Fargate, each pod runs
+in its own managed microVM with no accessible host — there is no DaemonSet path
+and no sidecar injection mechanism (no mutating webhook is registered). Setting
+`enableNetworkPolicy: "true"` on a Fargate-only cluster results in NetworkPolicy
+objects being accepted by the API server and silently unenforced.
 
-This is why NetworkPolicy is listed as a required secure-baseline control, not
-optional cleanup. The SG model on Fargate makes it the only layer capable of
-enforcing egress access control at per-service or per-pod granularity.
+This was confirmed empirically: a default-deny NetworkPolicy applied to the
+`iss-tracker` namespace had no effect on traffic — the ALB continued serving
+requests normally.
+
+**Consequence:** On a Fargate-only EKS cluster, the network enforcement layers
+available are SGs (ingress only, with full granularity) and NACLs (subnet-tier
+granularity). Per-pod egress control at service or destination granularity is
+not achievable with the standard EKS networking stack. This must be accounted
+for in the security posture of Fargate workloads.
 
 **Layer summary:**
 
@@ -415,7 +410,7 @@ enforcing egress access control at per-service or per-pod granularity.
 |-------|-------------|---------------------|
 | Security group egress | Service CIDR only (all services indistinguishable) | Yes — enforces "can use services" only |
 | NACL | Subnet tier (post-DNAT IP ranges) | No gap — but only subnet-granularity |
-| NetworkPolicy | Per-pod, per-namespace, per-port | No gap — operates post-DNAT |
+| NetworkPolicy | Per-pod, per-namespace, per-port | **Not supported on Fargate** — silently unenforced |
 | Security group ingress | Per-source-SG or per-source-CIDR | No gap — destination sees real source IP |
 
 ### NACL rules on Fargate
