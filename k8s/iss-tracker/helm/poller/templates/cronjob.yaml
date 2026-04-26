@@ -26,17 +26,9 @@ spec:
         {{- else }}
           serviceAccountName: {{ $.Release.Name}}-{{ $jobname }}
         {{- end }}
-        {{- if hasKey $job "securityContext" }}
-          {{- if $job.securityContext.runAsUser }}
+        {{- if hasKey $job "podSecurityContext" }}
           securityContext:
-            runAsUser: {{ $job.securityContext.runAsUser }}
-            {{- if $job.securityContext.runAsGroup }}
-            runAsGroup: {{ $job.securityContext.runAsGroup }}
-            {{- end }}
-            {{- if $job.securityContext.fsGroup }}
-            fsGroup: {{ $job.securityContext.fsGroup }}
-            {{- end }}
-          {{- end }}
+            {{- toYaml $job.podSecurityContext | nindent 12 }}
         {{- end }}
           containers:
           {{- if and (hasKey $job.image "digest") $job.image.digest }}
@@ -48,6 +40,10 @@ spec:
           {{- end }}
             imagePullPolicy: {{ $job.image.imagePullPolicy }}
             name: {{ $jobname }}
+            {{- if hasKey $job "containerSecurityContext" }}
+            securityContext:
+              {{- toYaml $job.containerSecurityContext | nindent 14 }}
+            {{- end }}
             {{- with $job.env }}
             env:
 {{ toYaml . | indent 12 }}

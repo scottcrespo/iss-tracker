@@ -103,9 +103,10 @@ visibility — hardening is a value edit, not a structural change:
    the structure in place for mixed-mode clusters.
 
 4. **Networking and ingress** — `service.type`, `ingress.enabled`, `networkPolicy`
-   (scaffolded disabled where not yet hardened). No service should be implicitly
-   exposed. `networkPolicy.create: false` is acceptable during functional baseline;
-   flip to `true` during secure baseline iteration.
+   (scaffolded disabled). No service should be implicitly exposed.
+   `networkPolicy.create: false` is correct for this cluster — native Kubernetes
+   NetworkPolicy is not enforceable on EKS Fargate. Do not set to `true`; it will
+   silently have no effect. See `docs/lessons-learned/fargate-networking-deep-dive.md`.
 
 ---
 

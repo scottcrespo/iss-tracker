@@ -2,6 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+ENV PYTHONDONTWRITEBYTECODE=1
+
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -9,7 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api.py .
 
-RUN useradd --no-create-home --shell /bin/false appuser && chown -R appuser /app
+RUN useradd --no-create-home --shell /bin/false --uid 1000 appuser && chown -R appuser /app
 USER appuser
 
 EXPOSE 8000

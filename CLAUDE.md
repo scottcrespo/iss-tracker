@@ -46,11 +46,13 @@ These rules apply in every session without exception:
 ## Current State
 
 **Complete:** Infrastructure, EKS Fargate cluster, IRSA, VPC endpoints, ALB,
-API and poller deployed and passing end-to-end smoke tests.
+API and poller deployed and passing end-to-end smoke tests. ArgoCD GitOps loop
+with ESO secrets management. Container security hardening — `runAsNonRoot`,
+`readOnlyRootFilesystem`, `capabilities.drop: ALL`, `seccompProfile: RuntimeDefault`
+(container level), `automountServiceAccountToken: false`. Scope: `api` and `poller`
+only; third-party components excluded. NetworkPolicy not enforceable on EKS Fargate.
 
-**Active priority:** ArgoCD + External Secrets Operator (`plans/argocd.md` — gitignored).
-
-**Up next:** Kubernetes container security hardening (RBAC, SecurityContext, NetworkPolicy).
+**Up next:** Prometheus + Pushgateway for poller heartbeat metrics.
 
 ---
 
@@ -62,6 +64,8 @@ API and poller deployed and passing end-to-end smoke tests.
 | Fargate profiles, cluster SG rules | `terraform/environments/dev/us-east-2/eks/eks.tf` |
 | VPC, subnets, NACLs | `terraform/environments/dev/us-east-2/eks/vpc.tf` |
 | VPC endpoints | `terraform/environments/dev/us-east-2/eks/endpoints.tf` |
+| Bastion host (dedicated root) | `terraform/environments/dev/us-east-2/bastion/` |
+| Bastion reusable module | `terraform/modules/bastion/` |
 | API Helm chart | `k8s/iss-tracker/helm/api/` |
 | Poller Helm chart | `k8s/iss-tracker/helm/poller/` |
 | LB controller Helm chart | `k8s/kube-system/helm/aws-load-balancer-controller/` |
@@ -69,7 +73,9 @@ API and poller deployed and passing end-to-end smoke tests.
 | Architecture decision records | `docs/decisions/` |
 | Lessons learned | `docs/lessons-learned/` |
 | Domain context docs | `docs/context/` |
+| Operational runbooks | `docs/runbooks/` |
 | Implementation plans | `plans/` (gitignored) |
+| Committed plan examples | `docs/plan-examples/` |
 
 ---
 
@@ -145,3 +151,4 @@ when working in the relevant areas of the codebase.
 - @docs/context/kubernetes.md
 - @docs/context/security.md
 - @docs/context/cicd.md
+- @docs/context/runbooks.md

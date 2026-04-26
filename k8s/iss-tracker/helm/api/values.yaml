@@ -10,7 +10,7 @@ image:
   repository: 
   # This sets the pull policy for images.
   pullPolicy: IfNotPresent
-  digest: sha256:f5fd89986fed515c6f06f89e7295e98dbc021bb59d5c1cd3bf04a44ac9421d30
+  digest: sha256:cf7f18b70c7cd497a11cb9279cb7e3eb38a6d012ad78f732f15e461b4d8b5b10
 
 # This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []
@@ -22,8 +22,9 @@ fullnameOverride: ""
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
-  # Automatically mount a ServiceAccount's API credentials?
-  automount: true
+  # IRSA projected token is injected by the EKS pod identity webhook independently
+  # of automountServiceAccountToken — AWS API access is unaffected by setting false.
+  automount: false
   # Annotations to add to the service account
   annotations:
     eks.amazonaws.com/role-arn: # inject at helm deploy time
@@ -38,16 +39,22 @@ podAnnotations: {}
 # For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  privileged: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
 
 env:
 - name: DYNAMODB_TABLE
@@ -138,17 +145,15 @@ autoscaling:
   # targetMemoryUtilizationPercentage: 80
 
 # Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+volumes:
+- name: tmp
+  emptyDir:
+    medium: Memory
 
 # Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+volumeMounts:
+- name: tmp
+  mountPath: /tmp
 
 nodeSelector: {}
 

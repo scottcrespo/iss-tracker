@@ -2,13 +2,24 @@
 # Declare variables to be passed into your templates.
 jobs:
   iss-tracker-poller:
-    securityContext: {}
-      # runAsUser: 1000
-      # runAsGroup: 1000
-      # fsGroup: 2000
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      privileged: false
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
     image:
       repository:
-      tag: latest
+      digest: sha256:50d4a73ee4abe80a9430b8a5e0db4bc49944b5f79cb040db50692a069140fc3e
       imagePullPolicy: IfNotPresent
     # optional env vars
     env:
@@ -24,6 +35,7 @@ jobs:
     args: {}
     serviceAccount:
       name: poller
+      automountServiceAccountToken: false
       annotations:
         eks.amazonaws.com/role-arn: # inject at helm deploy time
     resources:
@@ -33,6 +45,13 @@ jobs:
       requests:
         cpu: 10m
         memory: 32Mi
+    volumes:
+    - name: tmp
+      emptyDir:
+        medium: Memory
+    volumeMounts:
+    - name: tmp
+      mountPath: /tmp
     failedJobsHistoryLimit: 1
     successfulJobsHistoryLimit: 3
     concurrencyPolicy: Forbid

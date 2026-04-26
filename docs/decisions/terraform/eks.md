@@ -20,11 +20,13 @@ A dedicated VPC is provisioned using `terraform-aws-modules/vpc`. No default VPC
 
 ### Subnet layout
 
-| Subnet type | Used for | Internet egress |
-|-------------|----------|----------------|
-| Public | Load balancers only | Yes (IGW) |
-| Private | iss-tracker Fargate pods, bastion host | Yes (NAT gateway) |
-| Intra | kube-system Fargate pods | None |
+| Subnet type | Subnets | Aggregate | Used for | Internet egress |
+|-------------|---------|-----------|----------|----------------|
+| Private | `10.0.0-2.0/24` | `10.0.0.0/17` | iss-tracker Fargate pods, bastion host | Yes (NAT gateway) |
+| Intra | `10.0.128-130.0/24` | `10.0.128.0/18` | kube-system Fargate pods | None |
+| Public | `10.0.192-194.0/24` | `10.0.192.0/18` | Load balancers only | Yes (IGW) |
+
+The three parent blocks partition the VPC exactly: `/17 + /18 + /18 = /16` — no gaps, no overlap. The aggregate for any tier is determinable by inspection: third octet `< 128` is private, `128–191` is intra, `192+` is public. No cross-reference to subnet definitions is needed to verify tier membership of any IP.
 
 The VPC uses three subnet tiers rather than the conventional two (public/private). The split between private and intra is deliberate: not all workloads need internet access, and conflating "internal" with "has a NAT route" gives every workload capabilities it doesn't need.
 
@@ -33,6 +35,20 @@ The VPC uses three subnet tiers rather than the conventional two (public/private
 **Private subnets** host `iss-tracker` pods and the bastion host. The poller must reach the public ISS position API over the internet. A NAT gateway in the public subnet provides outbound internet for private subnets without exposing them to inbound connections. A single NAT gateway is used for dev cost control; production would use one per AZ for HA.
 
 The bastion sits in the private subnet rather than the public subnet. NAT gateway handles all outbound internet traffic (kubectl and helm downloads on first boot). No public IP is assigned — EC2 Instance Connect Endpoint proxies SSH to the bastion's private IP, so no inbound internet exposure is required. The public subnet is reserved exclusively for the ALB.
+
+#### CIDR allocation rationale
+
+**Private gets `/17` (half the VPC).** Application workloads live here, and on EKS Fargate each pod consumes a dedicated branch ENI with a real VPC IP. Pod density is bounded by subnet address space — a `/24` gives roughly 200 usable pod IPs after VPC-reserved addresses. A `/17` provides 128 `/24`s of reserved expansion room and — critically — remains permanently summarizable as a single CIDR regardless of how many subnets are added later. This matters: Fargate NACL debugging is significantly more complex than on EC2 (see `docs/lessons-learned/fargate-networking-deep-dive.md`), and a two-CIDR private tier would require two entries on every cross-tier NACL rule, doubling the rule count in the tier most likely to hit the AWS 20-rule NACL limit. The `/17` forecloses that problem permanently.
+
+**Intra and public each get `/18` (one quarter each).** Intra hosts system workloads with bounded growth — CoreDNS, LB controller, VPC endpoint ENIs. Public hosts only ALB ENIs. A `/18` provides 64 `/24`s of room for each, which is more than sufficient, and the two `/18`s together account for the other half of the VPC cleanly.
+
+#### Alternatives considered
+
+**Original ad-hoc layout (rejected).** The initial subnet assignments used non-aligned addresses (`10.0.1-3.0/24` for private, `10.0.51-53.0/24` for intra, `10.0.101-103.0/24` for public). None of the three tiers had a clean power-of-2-aligned parent block. The intra aggregate required `/21`-alignment math (`floor(51/8)×8 = 48 → 10.0.48.0/21`) and included six unallocated `/24`s as collateral. The public subnets had no clean parent at all — they could not be aggregated. The ad-hoc layout made NACL rule auditing dependent on looking up subnet definitions, and added phantom address ranges that were harmless but increased audit surface. See `docs/lessons-learned/private-eks-fargate-debugging.md` section 10 for the full alignment derivation.
+
+**Intra-first ordering: `intra/private/public` (considered, rejected).** An alternative with intra at `10.0.0.0/18`, private at `10.0.64.0/18`, and public at `10.0.128.0/18` was evaluated. The motivation was placing the most protected tier at the lowest numerical range. This failed on one critical constraint: the private tier would occupy a `/18` (`10.0.64.0/18`), which cannot be expanded without creating a second discontiguous block. Two separate private CIDRs — say `10.0.64.0/18` and some future `10.0.192.0/18` — cannot be summarized into a single aggregate. With private as the growth tier and Fargate's hard per-pod IP dependency, a two-CIDR private tier is a significant operational liability. The `/17` for private requires it to occupy the lower half of the VPC (base address must be a multiple of 128 for `/17` alignment), which means private starts at `10.0.0.0` and intra follows above it. The numerical ordering preference was outweighed by the aggregation constraint.
+
+**Equal three-way split: three `/18`s (considered, rejected).** Three equal `/18`s (`10.0.0.0/18`, `10.0.64.0/18`, `10.0.128.0/18`) were also considered. This sacrifices the permanently-summarizable private tier in exchange for symmetry. Given the documented Fargate IP density constraint and the NACL complexity that follows from a multi-CIDR private aggregate, symmetry was not worth the tradeoff. Private gets more space because private has more growth pressure.
 
 ### Fargate profile subnet pinning
 
