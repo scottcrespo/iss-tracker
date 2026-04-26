@@ -495,3 +495,76 @@ And the EKS primary cluster SG (`eks_primary_sg_id`) must have:
 | Rule | Why |
 |------|-----|
 | Ingress UDP/TCP 53 from the new pod SG | CoreDNS access for the new namespace |
+
+---
+
+## Fargate Security Posture: Conclusions
+
+The networking model, NetworkPolicy findings, and hardening work on this cluster
+surface two structural security limitations of EKS Fargate relative to EC2 node
+groups. These are not misconfigurations — they are architectural properties of
+the Fargate model.
+
+### 1. No Kubernetes NetworkPolicy enforcement
+
+Native Kubernetes NetworkPolicy is not supported on EKS Fargate. The vpc-cni
+`enableNetworkPolicy` feature uses eBPF, which requires privileged host kernel
+access. On Fargate, each pod runs in its own AWS-managed microVM — there is no
+accessible host, no DaemonSet path, and no mutating webhook for sidecar
+injection. NetworkPolicy objects are accepted by the API server and silently
+unenforced. Confirmed empirically on this cluster.
+
+The consequence is that per-pod egress enforcement at service or destination
+granularity is not achievable with the standard Kubernetes networking stack on
+Fargate. Network isolation falls back to SGs (ingress only, at pod granularity
+via SecurityGroupPolicy) and NACLs (subnet-tier granularity only). In a
+production environment, delegating application-layer network segmentation
+entirely to infrastructure-layer controls is a meaningful security regression —
+NACLs distinguish subnet tiers, not individual services or pods.
+
+**The Istio path exists but conflicts with hardened security contexts.** Istio's
+Envoy sidecar intercepts traffic inside the pod's network namespace before it
+reaches the branch ENI, so the pre-DNAT SG evaluation problem does not affect
+it the same way it affects NetworkPolicy. However, Istio's init container
+requires `NET_ADMIN` capability to install iptables interception rules. This
+directly conflicts with `capabilities.drop: ALL`. Adopting Istio on hardened
+Fargate pods requires either relaxing capabilities for all Istio-enabled pods or
+accepting that traffic interception cannot be set up — defeating the purpose of
+the service mesh. The operational overhead is substantial and the hardening
+tradeoff is unresolved.
+
+### 2. Reduced runtime observability and detection tooling
+
+The lack of node-level access on Fargate eliminates the DaemonSet deployment
+model required by the majority of eBPF-based security observability and policy
+enforcement tools: Falco, Tetragon, Cilium, Pixie, and similar tooling all
+depend on a privileged agent running on the host or as a DaemonSet. None of
+these are deployable on Fargate. In practice this reduces the operator's ability
+to detect in-container threats, anomalous syscall patterns, and lateral movement
+using the ecosystem tools they would reach for on EC2 nodes.
+
+**Partial mitigations exist.** Two factors limit the severity of this gap:
+
+- **Fargate's microVM isolation raises the bar for container escape.** Each
+  Fargate pod runs in its own AWS-managed microVM (analogous to Kata Containers).
+  A container escape requires defeating both the container runtime and the
+  microVM boundary — a significantly harder target than a container escape on a
+  shared EC2 node that reaches a common host. The inability to detect escape
+  attempts is partially offset by the structural difficulty of executing one.
+
+- **AWS GuardDuty EKS Runtime Monitoring added Fargate support in 2023.** AWS
+  injects a managed security agent into Fargate pods to provide runtime threat
+  detection. It does not expose the full eBPF observability surface of
+  third-party tooling, but it provides baseline anomaly detection without
+  requiring DaemonSet access.
+
+### Summary
+
+EKS Fargate trades operational simplicity (no node patching, no cluster
+capacity planning) for reduced security tooling surface. For workloads with
+stringent network segmentation or runtime observability requirements, EC2 node
+groups provide materially stronger controls. The choice of Fargate for this
+project was appropriate for a portfolio cluster where operational overhead
+reduction was the goal; in a production environment with sensitive workloads,
+these limitations warrant explicit architectural evaluation before committing to
+Fargate.

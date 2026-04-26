@@ -65,18 +65,22 @@ accumulates permissions beyond its function.
 - Image builds and ECR pushes are performed manually
 - See `docs/context/cicd.md` and `docs/decisions/cicd/cicd.md`
 
-**Container runtime (current baseline)**
+**Container runtime (current baseline — first-party workloads)**
 - IRSA projected tokens for AWS API access — no static credentials in containers
 - Image references use SHA256 digest — immutable, not tag-based
+- `runAsNonRoot: true`, `runAsUser: 1000`, `runAsGroup: 1000`, `fsGroup: 1000`
+- `readOnlyRootFilesystem: true` with tmpfs at `/tmp`
+- `capabilities.drop: ["ALL"]` — no capabilities granted
+- `seccompProfile: RuntimeDefault` at container level only
+- `automountServiceAccountToken: false` — IRSA projected token used instead
+- Scope: `api` and `poller` only. Third-party components (ArgoCD, ESO, LB
+  controller, CoreDNS) maintain their own security posture upstream.
 
-**Container runtime (secure baseline — planned)**
-- `runAsNonRoot: true`, explicit `runAsUser` and `runAsGroup`
-- `readOnlyRootFilesystem: true`
-- Drop all Linux capabilities; add back only what is explicitly required
-- `seccompProfile: RuntimeDefault`
-- Kubernetes RBAC scoped to minimum required verbs and resources
-- `automountServiceAccountToken: false` where IRSA projected token is used instead
-- NetworkPolicy restricting pod egress to required endpoints only
+**Container runtime (limitation — NetworkPolicy not enforceable on Fargate)**
+- Native Kubernetes NetworkPolicy is not supported on EKS Fargate. The vpc-cni
+  `enableNetworkPolicy` feature requires eBPF host kernel access unavailable on
+  Fargate. NetworkPolicy objects are silently unenforced. Confirmed empirically.
+  See `docs/lessons-learned/fargate-networking-deep-dive.md`.
 
 ---
 

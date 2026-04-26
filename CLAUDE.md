@@ -46,11 +46,13 @@ These rules apply in every session without exception:
 ## Current State
 
 **Complete:** Infrastructure, EKS Fargate cluster, IRSA, VPC endpoints, ALB,
-API and poller deployed and passing end-to-end smoke tests.
+API and poller deployed and passing end-to-end smoke tests. ArgoCD GitOps loop
+with ESO secrets management. Container security hardening — `runAsNonRoot`,
+`readOnlyRootFilesystem`, `capabilities.drop: ALL`, `seccompProfile: RuntimeDefault`
+(container level), `automountServiceAccountToken: false`. Scope: `api` and `poller`
+only; third-party components excluded. NetworkPolicy not enforceable on EKS Fargate.
 
-**Active priority:** ArgoCD + External Secrets Operator (`plans/argocd.md` — gitignored).
-
-**Up next:** Kubernetes container security hardening (RBAC, SecurityContext, NetworkPolicy).
+**Up next:** Prometheus + Pushgateway for poller heartbeat metrics.
 
 ---
 

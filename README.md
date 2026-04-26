@@ -71,6 +71,8 @@ Both applications run as containers on EKS Fargate inside a private VPC. All AWS
 
 **IAM policy content is always caller-defined.** Terraform modules provision IAM role structure; the calling root module supplies all policy documents. No module in this codebase defines what an identity is allowed to do.
 
+**Container security hardening is scoped to first-party workloads.** The `api` and `poller` pods comply with Kubernetes Pod Security Standards Restricted level: `runAsNonRoot`, `readOnlyRootFilesystem`, `capabilities.drop: ALL`, `seccompProfile: RuntimeDefault` at container level, `automountServiceAccountToken: false`. Third-party components (ArgoCD, ESO, LB controller, CoreDNS) are explicitly out of scope — their security posture is maintained upstream and must be re-validated on every chart upgrade. NetworkPolicy enforcement is not achievable on EKS Fargate; the vpc-cni eBPF agent requires host kernel access unavailable in Fargate's managed microVM model. Network isolation relies on SGs, NACLs, and VPC endpoint routing instead.
+
 **Decisions are documented.** Every non-obvious architectural choice has a corresponding decision document explaining the tradeoff, the alternatives considered, and why the chosen approach is correct for this context. See [docs/decisions/](docs/decisions/).
 
 **CI is implemented but not wired to live infrastructure; CD is live via ArgoCD.** The continuous delivery side is fully operational: ArgoCD runs inside the cluster and polls this repository, automatically syncing changes to `develop` into the cluster without any cluster credentials living in GitHub. The continuous integration side (GitHub Actions → AWS) is a deliberate architectural choice, not an omission. Public repository workflow logs are publicly visible, and AWS tooling can emit account IDs, ARNs, and other sensitive values regardless of suppression attempts. The full CI architecture is implemented in Terraform and documented — OIDC federation, separate plan/apply roles, permission boundaries — and is production-ready in design. It is simply not connected to a live account from a public repo. See [CI/CD design decisions](docs/decisions/cicd/cicd.md).
@@ -215,6 +217,7 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 - [x] Helm chart for API Deployment + Ingress (ALB)
 - [x] Helm chart for Poller CronJob
 - [x] Kubernetes namespace and service account provisioning
+- [x] Container security hardening — `runAsNonRoot`, `readOnlyRootFilesystem`, `capabilities.drop: ALL`, `seccompProfile: RuntimeDefault`, `automountServiceAccountToken: false` (first-party workloads only; see design note below)
 - [x] End-to-end smoke test (poller writes, API reads)
 
 **CI/CD — complete**
@@ -225,7 +228,6 @@ Separate workflow files cover bootstrap infrastructure, application CI, and envi
 
 ## To Do
 
-- [ ] Kubernetes container security hardening — RBAC, ServiceAccount policies, SecurityContext (`runAsNonRoot`, `readOnlyRootFilesystem`, drop capabilities)
 - [ ] Prometheus + Pushgateway for poller heartbeat metrics
 - [ ] Grafana dashboard
 

@@ -308,10 +308,11 @@ kubectl exec -n iss-tracker deploy/api -- \
 
 ### Phase 2a — securityContext (no seccomp)
 
+**api** — exec-based (Deployment, pod stays running):
+
 ```bash
 # Verify pods start cleanly
 kubectl rollout status deployment -n iss-tracker
-kubectl get pods -n iss-tracker
 
 # Verify non-root UID
 kubectl exec -n iss-tracker deploy/api -- id
@@ -325,33 +326,82 @@ kubectl exec -n iss-tracker deploy/api -- touch /app/test
 kubectl exec -n iss-tracker deploy/api -- touch /tmp/test && echo "tmpfs ok"
 # Expected: tmpfs ok
 
-# Verify NetworkPolicy still enforced after restart
+# Verify end-to-end
 curl "http://${ALB_DNS}/positions"
 # Expected: HTTP 200
 ```
 
+**poller** — spec-based (CronJob, pod exits on completion; exec is not reliable):
+
+```bash
+# Get the most recent poller pod
+POD=$(kubectl get pods -n iss-tracker -l cron=iss-tracker-poller \
+  --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}')
+
+# Verify container-level securityContext
+kubectl get pod $POD -n iss-tracker \
+  -o jsonpath='{.spec.containers[0].securityContext}' | python3 -m json.tool
+# Expected: allowPrivilegeEscalation:false, readOnlyRootFilesystem:true,
+#           runAsNonRoot:true, privileged:false, capabilities.drop:ALL
+
+# Verify pod-level securityContext
+kubectl get pod $POD -n iss-tracker \
+  -o jsonpath='{.spec.securityContext}' | python3 -m json.tool
+# Expected: runAsNonRoot:true, runAsUser:1000, runAsGroup:1000, fsGroup:1000
+
+# Verify ServiceAccount automount disabled
+kubectl get serviceaccount poller -n iss-tracker \
+  -o jsonpath='{.automountServiceAccountToken}'
+# Expected: false
+
+# Verify job completed successfully and DynamoDB write succeeded
+kubectl logs $POD -n iss-tracker
+# Expected: successful write entries, no permission errors
+
+# Verify no syscall violations
+kubectl logs $POD -n iss-tracker | grep -i "operation not permitted\|seccomp\|syscall"
+# Expected: no matches
+```
+
 ### Phase 2b — seccompProfile: RuntimeDefault
+
+**api:**
 
 ```bash
 # Verify pods start cleanly after seccomp applied
 kubectl rollout status deployment -n iss-tracker
 
 # Confirm seccomp is scoped to container, not pod
-kubectl get pod -n iss-tracker -l app.kubernetes.io/name=api -o yaml \
-  | grep -A3 seccompProfile
-# Expected: seccompProfile present under containers[].securityContext only,
-#           absent from spec.securityContext (pod level)
+kubectl get deployment api -n iss-tracker \
+  -o jsonpath='{.spec.template.spec.containers[0].securityContext}' | python3 -m json.tool
+# Expected: seccompProfile.type:RuntimeDefault present in container securityContext
 
-# Verify no syscall violations in application logs
+# Verify no syscall violations
 kubectl logs -n iss-tracker deploy/api | grep -i "operation not permitted\|seccomp\|syscall"
 # Expected: no matches
-
-# Verify NetworkPolicy agent sidecar still functional (NetworkPolicy still enforced)
-kubectl exec -n iss-tracker deploy/api -- \
-  curl -s --max-time 5 http://169.254.169.254/latest/meta-data/
-# Expected: timeout — confirms sidecar is still enforcing policy
 
 # Final end-to-end smoke test
 curl "http://${ALB_DNS}/positions"
 # Expected: HTTP 200 with ISS position data
+```
+
+**poller:**
+
+```bash
+# Get the most recent poller pod
+POD=$(kubectl get pods -n iss-tracker -l cron=iss-tracker-poller \
+  --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}')
+
+# Confirm seccomp scoped to container, not pod
+kubectl get pod $POD -n iss-tracker \
+  -o jsonpath='{.spec.containers[0].securityContext}' | python3 -m json.tool
+# Expected: seccompProfile.type:RuntimeDefault present
+
+kubectl get pod $POD -n iss-tracker \
+  -o jsonpath='{.spec.securityContext}' | python3 -m json.tool
+# Expected: seccompProfile absent from pod-level spec
+
+# Verify no syscall violations
+kubectl logs $POD -n iss-tracker | grep -i "operation not permitted\|seccomp\|syscall"
+# Expected: no matches
 ```
